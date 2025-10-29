@@ -1,0 +1,49 @@
+repos:
+  # --- Quick hygiene & formatters (fast) ---
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: [--fix]      # auto-fix what it can, including isort
+      - id: ruff-format
+        name: ruff (format)
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: [--check]    # black check; ruff-format already formats
+        # you can remove --check if you prefer black to auto-format here
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-requests
+          - types-beautifulsoup4
+        args: [--config-file=pyproject.toml]
+        # mypy runs only on changed files by default; good for speed
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+
+# --- Run tests on push (keeps commits fast, gates pushes) ---
+# Pre-commit supports stages; this one triggers only on `git push`.
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (unit)
+        entry: pytest -q -m "not integration" --maxfail=1
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

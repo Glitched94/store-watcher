@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "store-watcher"
+version = "0.1.0"
+description = "Watch retail pages and alert on new/restocked items."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Joshua Dietrich" }]
+keywords = ["scraping", "ecommerce", "alerts", "watcher", "pins"]
+dependencies = [
+  "requests>=2.32",
+  "beautifulsoup4>=4.12",
+  "typer>=0.12",
+  "rich>=13.7",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.5",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.1",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "black>=24.8",
+  "mypy>=1.11",
+  "types-requests",
+  "types-beautifulsoup4",
+]
+
+[project.scripts]
+store-watcher = "store_watcher.cli:app"
+
+[tool.typer]
+# (optional) enables nicer --help formatting in some environments
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E","F","I","UP","B","W","N"]
+ignore = ["E203"]  # allow Black-compliant slicing
+exclude = ["build", "dist", ".venv", ".git"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+exclude = "tests/fixtures"
+plugins = []
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/store_watcher"]
