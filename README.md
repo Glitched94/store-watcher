@@ -1,50 +1,54 @@
 # Store Watcher
 
-Watch retail category pages and get alerts for **new** and **restocked** items.
+Watch online store pages and get alerts for **new** and **restocked** products.
 
-- Robust identity via **product codes** (e.g., `...-438039197642.html`)
-- Noise-control via a compact **state machine**: `status` (present/absent) + `status_since`
-- Alerts via **email** out of the box; Slack/webhooks easy to add
-- Extensible **adapter** interface (Disney Store included; Shopify example planned)
-- CLI with clean logs; runs great as a scheduled task or service
+- Robust identity via **product codes** (e.g., `438039197642`)
+- Compact **state machine** tracks presence/absence over time
+- Alerts via **Email** and **Discord** (chunked, cleanly formatted messages)
+- Extensible **adapter** system (Disney Store included)
+- CLI for running, debugging, and scheduling
+- Fully tested and CI-verified with GitHub Actions
 
-> This repo is a small but production-minded demo of Python skills: adapters, state machines, CLI + packaging, tests, and CI hooks.
-
----
-
-## Features
-
-- **New item alerts**: first time an item is observed.
-- **Restock alerts**: item was absent for ≥ `RESTOCK_WINDOW_HOURS`, then observed present again.
-- **Canonicalization**: URLs normalized; identity keyed by product code to ignore query-string noise.
-- **Polite fetching**: user-agent set, interval controlled; retry/backoff recommended (see roadmap).
-- **Portable state**: human-readable JSON with auto-migrations across versions.
+> A production-minded Python demo: adapters, state machines, CLI, notifications, testing, and CI.
 
 ---
 
-## Quickstart
+## ✨ Features
+
+- **New item alerts** — first time an item appears.
+- **Restock alerts** — re-added after `RESTOCK_WINDOW_HOURS` of absence.
+- **Pretty notifications**  
+  - Email: bold item names as links.  
+  - Discord: Markdown links `[Name](short-url)` with embeds suppressed and auto-chunking for long lists.
+- **Polite fetching** — headers, intervals, and retries configurable.
+- **Portable state** — human-readable JSON with automatic migrations.
+- **Tested** — utilities, adapter parsing, state logic, and rendering covered by pytest.
+
+---
+
+## 🚀 Quickstart
 
 ```bash
-# 1) Install
+# 1. Install
 pipx install .
 
-# Or locally for development
-pip install -e .
+# Or for development
+pip install -e ".[dev]"
 
-# 2) Create .env
+# 2. Create your .env
 cp .env.example .env
 
-# 3) Run (default 5 min interval, 24h restock window)
+# 3. Run (defaults: 5 min interval, 24 h restock window)
 store-watcher watch
 ````
 
-### .env example
+### `.env` example
 
 ```ini
 # Disney Store pins grid (server-rendered HTML)
 TARGET_URL=https://www.disneystore.com/on/demandware.store/Sites-shopDisney-Site/default/Search-UpdateGrid?cgid=collectibles-pins&start=0&sz=200
 
-# Optional regex filters (Python regex). Leave blank to disable.
+# Optional regex filters (Python regex)
 INCLUDE_RE=
 EXCLUDE_RE=(t-shirt|jersey|cap|hoodie|sweatshirt)\b
 
@@ -59,41 +63,45 @@ SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_app_password
 EMAIL_FROM=your_email@gmail.com
 EMAIL_TO=you@yourdomain.com
+
+# Discord Webhook (optional)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy
+DISCORD_USERNAME=Store Watcher
+DISCORD_AVATAR_URL=
 ```
 
 ---
 
-## CLI
+## 🧰 CLI
 
 ```bash
 # Run watcher (defaults from .env)
 store-watcher watch
 
-# Override some values on the fly
+# Override on the fly
 store-watcher watch --every 600 --restock 48
 
-# Dry-run once (fetch + compute + print, no loop / no email)
+# Single pass (no loop / no email)
 store-watcher watch --once
 
-# Show current known state
+# View or clear stored state
 store-watcher state show
-
-# Clear local state (be careful!)
 store-watcher state clear
 ```
 
-> Tip: Use `pythonw.exe` on Windows or a service/daemon on Linux to run headless.
+> 💡 Tip: On Windows, use `pythonw.exe` or Task Scheduler; on Linux, use `systemd` for background operation.
 
 ---
 
-## How it works (state machine)
+## ⚙️ How it Works
 
-Per item (keyed by **code**):
+Each product is keyed by its numeric code:
 
 ```json
 {
   "438039197642": {
-    "url": "https://disneystore.com/animal-pin-the-muppets-438039197642.html",
+    "url": "https://disneystore.com/438039197642.html",
+    "name": "Animal Pin – The Muppets",
     "first_seen": "2025-10-29T03:05:00Z",
     "status": 1,
     "status_since": "2025-10-29T03:05:00Z"
@@ -101,16 +109,44 @@ Per item (keyed by **code**):
 }
 ```
 
-* `status`: `1` present, `0` absent
-* `status_since`: when that status last changed
-* **Restock** triggers only on an *observed* absent→present transition where
-  `now - status_since ≥ RESTOCK_WINDOW_HOURS`.
+| Field          | Meaning                                                                        |
+| -------------- | ------------------------------------------------------------------------------ |
+| `status`       | `1` = present, `0` = absent                                                    |
+| `status_since` | when the current status began                                                  |
+| **Restock**    | triggers only on an *absent → present* transition after `RESTOCK_WINDOW_HOURS` |
 
 ---
 
-## Scheduling
+## 🪄 Notifications
 
-### Windows (Task Scheduler)
+### Email
+
+* Simple HTML list of new/restocked products
+* Each item name is a clickable link
+* Sent through your SMTP configuration
+
+### Discord
+
+* Clean Markdown messages with `[Name](short-url)` format
+* Embeds suppressed (no bulky previews)
+* Automatic message chunking if over Discord’s 2000-character limit
+
+Example:
+
+```
+New items (3):
+- [Ariel and Sebastian Pin – The Little Mermaid](https://www.disneystore.com/438039196577.html)
+- [Disneyland 70th Anniversary Vault Collection Pin Display Frame](https://www.disneystore.com/438018657693.html)
+- [Mickey Mouse Holiday Pin](https://www.disneystore.com/438039190384.html)
+
+Total items now: 23
+```
+
+---
+
+## 🕒 Scheduling
+
+### Windows Task Scheduler
 
 ```powershell
 $task   = "StoreWatcher"
@@ -123,9 +159,9 @@ schtasks /Create /TN $task /SC ONLOGON `
   /RL LIMITED /F
 ```
 
-### Linux (systemd)
+### Linux systemd
 
-```
+```ini
 # /etc/systemd/system/store-watcher.service
 [Unit]
 Description=Store Watcher
@@ -139,66 +175,83 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now store-watcher
-```
-
 ---
 
-## Project structure
+## 🧱 Project Structure
 
 ```
 store-watcher/
 ├─ src/store_watcher/
-│  ├─ __init__.py
-│  ├─ cli.py           # Typer commands: watch, state show/clear
-│  ├─ core.py          # loop, state machine, email notifier
+│  ├─ cli.py           # Typer CLI commands
+│  ├─ core.py          # loop + state machine
+│  ├─ notify.py        # Email & Discord notifiers
 │  ├─ adapters/
 │  │  ├─ base.py       # Adapter ABC + Item type
 │  │  └─ disneystore.py
-│  ├─ utils.py         # URL canonicalize, product code extraction
+│  ├─ utils.py         # canonicalization, code extraction, short URLs
 │  └─ state.py         # JSON store + migrations
-├─ tests/              # pytest
-├─ README.md
+├─ tests/              # pytest unit tests
+├─ .pre-commit-config.yaml
 ├─ pyproject.toml
-├─ .env.example
+├─ README.md
 └─ .github/workflows/ci.yml
 ```
 
 ---
 
-## Development
+## 🧪 Development
 
 ```bash
 # Dev install
 pip install -e ".[dev]"
 
-# Run linters & tests
+# Lint, format, type-check, test
 ruff check .
-black --check .
+ruff format --check .
 mypy src
 pytest -q
 ```
 
----
+### Pre-commit hooks
 
-## Roadmap
+```bash
+pre-commit install
+pre-commit install --hook-type pre-push
+pre-commit run --all-files
+```
 
-* Retries with backoff (429/5xx), jittered cadence
-* Slack/Discord/Webhook notifiers
-* Shopify adapter (+ Playwright “headless” adapter for JS-heavy sites)
-* Price/title change detection via normalized DOM hashing
-* Optional SQLite state backend, small dashboard page
-
----
-
-## Ethics
-
-Respect each site’s Terms of Service and robots.txt. Keep intervals reasonable. This tool is for personal use and demos.
+These run `ruff`, `black`, `mypy`, and `pytest` automatically before you commit or push.
 
 ---
 
-## License
+## 🧰 Continuous Integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs:
+
+* `ruff`, `black`, `mypy`
+* `pytest` on Python 3.11 + 3.12
+* builds wheel + sdist and uploads as artifact
+
+---
+
+## 🧭 Roadmap
+
+* Retries with backoff (429/5xx)
+* Additional adapters (Shopify, Playwright for JS sites)
+* Optional SQLite backend
+* Price/title change detection
+* Small web dashboard
+
+---
+
+## 🤝 Ethics
+
+Respect each site’s Terms of Service and robots.txt.
+Keep polling intervals reasonable.
+This tool is for personal use and demonstration purposes only.
+
+---
+
+## 📄 License
 
 MIT
