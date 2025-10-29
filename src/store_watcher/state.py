@@ -45,6 +45,7 @@ def _migrate_from_dict(raw: dict) -> Dict[str, Dict[str, Any]]:
     migrated: Dict[str, Dict[str, Any]] = {}
 
     for k, v in raw.items():
+        # Determine identity (code or URL)
         if k.isdigit():
             code = k
             url = v.get("url") or ""
@@ -54,25 +55,35 @@ def _migrate_from_dict(raw: dict) -> Dict[str, Dict[str, Any]]:
             if not code:
                 continue
 
+        # If already status-based, keep as-is but normalize fields
         if "status" in v and "status_since" in v:
             first_seen = v.get("first_seen") or now
             status = 1 if v.get("status") else 0
             status_since = v.get("status_since") or first_seen
-            migrated[code] = {
+            name = v.get("name")  # <-- preserve name if present
+
+            entry: Dict[str, Any] = {
                 "url": url or v.get("url", ""),
                 "first_seen": first_seen,
                 "status": status,
                 "status_since": status_since,
             }
-        else:
-            first_seen = v.get("first_seen") or v.get("last_seen") or now
-            last_seen = v.get("last_seen") or first_seen
-            migrated[code] = {
-                "url": url or v.get("url", ""),
-                "first_seen": first_seen,
-                "status": 1,
-                "status_since": last_seen,
-            }
+            if name:  # <-- keep it
+                entry["name"] = name
+
+            migrated[code] = entry
+            continue
+
+        # Else assume last_seen/first_seen model
+        first_seen = v.get("first_seen") or v.get("last_seen") or now
+        last_seen = v.get("last_seen") or first_seen
+        migrated[code] = {
+            "url": url or v.get("url", ""),
+            "first_seen": first_seen,
+            "status": 1,
+            "status_since": last_seen,
+        }
+
     return migrated
 
 def load_state(path: Path) -> Dict[str, Dict[str, Any]]:

@@ -1,0 +1,30 @@
+from store_watcher.notify import render_change_digest
+from store_watcher.utils import pretty_name_from_url
+
+def _state(url: str, name: str | None = None):
+    return {"url": url, **({"name": name} if name else {})}
+
+def test_render_uses_masked_links_and_short_urls():
+    state = {
+        "438039197642": _state("https://www.disneystore.com/animal-pin-the-muppets-438039197642.html"),
+        "438018657693": _state("https://www.disneystore.com/xyz-438018657693.html", name="XYZ Pin"),
+    }
+    subject, html_body, text_body = render_change_digest(
+        new_codes=["438039197642"],
+        restocked_codes=["438018657693"],
+        state=state,
+        restock_hours=24,
+        target_url="https://example.com/ignored",
+        total_count=2,
+    )
+    # Subject summarizes counts
+    assert "1 new" in subject and "1 restocked" in subject
+
+    # HTML contains <a> with display name (no raw URL text)
+    assert '<a href="https://www.disneystore.com/438039197642.html">' in html_body
+    assert "Animal" in html_body or "Pin" in html_body
+
+    # Text uses masked link with short URL and no dev-y header
+    assert "Changes detected on" not in text_body
+    assert "https://www.disneystore.com/438039197642.html" in text_body
+    assert "[" in text_body and "](" in text_body  # markdown link present
