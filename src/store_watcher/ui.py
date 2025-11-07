@@ -48,7 +48,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
     app = FastAPI(title="Store Watcher UI")
 
     @app.get("/", response_class=HTMLResponse)
-    async def index():
+    async def index() -> HTMLResponse:
         # Simple Tailwind + HTMX page; HTMX swaps the two fragments below
         html = """<!doctype html>
 <html lang="en">
@@ -160,11 +160,11 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
         return HTMLResponse(html)
 
     @app.get("/api/version", response_class=PlainTextResponse)
-    async def version():
+    async def version() -> PlainTextResponse:
         return PlainTextResponse(_state_version())
 
     @app.get("/api/summary", response_class=HTMLResponse)
-    async def summary():
+    async def summary() -> HTMLResponse:
         state = _load_state_current()
         # group by label only for items currently present
         totals: dict[str, int] = {}
@@ -199,7 +199,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
         q: str = Query("", max_length=100),
         page: int = Query(1, ge=1),
         page_size: int = Query(50, ge=10, le=200),
-    ):
+    ) -> HTMLResponse:
         state = _load_state_current()
 
         region_order = {"US": 0, "EU": 1, "UK": 2, "ASIA": 3, "AU": 4, "JP": 5}
@@ -215,7 +215,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
             except Exception:
                 return 0
 
-        def sort_key(item):
+        def sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, int, int]:
             _key, v = item
             lab = site_label(v.get("host") or v.get("url", ""))
             status = int(v.get("status", 0))
@@ -242,7 +242,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
         end = min(start + page_size, total)
         page_items = items_sorted[start:end]
 
-        def card(key, v):
+        def card(key: str, v: dict[str, Any]) -> str:
             lab = site_label(v.get("host") or v.get("url", ""))
             code = key.split(":", 1)[-1]
             name = v.get("name") or ""
@@ -295,7 +295,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
         return HTMLResponse("".join(rows) + more)
 
     @app.get("/api/raw", response_class=JSONResponse)
-    async def raw():
+    async def raw() -> JSONResponse:
         return JSONResponse(_load_state_current())
 
     return app

@@ -127,11 +127,11 @@ class DiscordWebhookNotifier(Notifier):
 
 def render_change_digest(
     *,
-    new_codes,
-    restocked_codes,
-    state,
+    new_codes: list[str],
+    restocked_codes: list[str],
+    state: dict[str, dict[str, Any]],
     restock_hours: int,
-    target_url: str,  # kept for signature compat; not shown
+    target_url: str,
     total_count: int,
 ) -> tuple[str, str, str]:
     """

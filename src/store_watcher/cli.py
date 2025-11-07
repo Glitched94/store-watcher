@@ -25,7 +25,7 @@ def watch(
     exclude_re: str = typer.Option("", help="Python regex to exclude URLs"),
     once: bool = typer.Option(False, help="Run a single tick then exit"),
     env: str | None = typer.Option(None, "--env", help="Path to a .env file to load"),
-):
+) -> None:
     run_watcher(
         site=site,
         url_override=urls or url,  # pass whichever is set; core will split
@@ -42,7 +42,7 @@ def watch(
 def state_cmd(
     path: str = typer.Option("seen_items.json", help="Path to state JSON"),
     action: str = typer.Argument("show", help="show | clear"),
-):
+) -> None:
     """
     Inspect or clear the local state file.
     """
@@ -73,7 +73,7 @@ def state_cmd(
 def migrate_json_to_sqlite(
     json_path: str = typer.Option("seen_items.json", help="Path to legacy JSON state"),
     sqlite_path: str = typer.Option("state.db", help="Destination SQLite file"),
-):
+) -> None:
     """
     Migrate a JSON state file into SQLite. This respects your existing migrations
     (legacy list/dict -> status machine) during load.
@@ -90,7 +90,8 @@ def migrate_json_to_sqlite(
             if prev is not None:
                 os.environ["STATE_DB"] = prev
     else:
-        raise typer.Exit(f"JSON not found: {json_path}")
+        typer.echo(f"JSON not found: {json_path}")
+        raise typer.Exit(code=1)
 
     save_any(state)  # goes to SQLite because STATE_DB is set
     typer.echo(f"Migrated {len(state)} records -> {sqlite_path}")
@@ -102,7 +103,7 @@ def ui(
     port: int = typer.Option(8000, help="Port"),
     env: str | None = typer.Option(None, "--env", help="Path to a .env file to load for the UI"),
     reload: bool = typer.Option(False, help="Auto-reload on code changes (dev)"),
-):
+) -> None:
     app = create_app(dotenv_path=env)
     uvicorn.run(app, host=host, port=port, reload=reload)
 

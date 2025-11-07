@@ -7,6 +7,7 @@ import traceback
 from collections.abc import Iterable
 from datetime import timedelta
 from pathlib import Path
+from typing import Optional, Pattern
 
 from dotenv import load_dotenv
 
@@ -23,7 +24,7 @@ ADAPTERS: dict[str, Adapter] = {
 }
 
 
-def _compile(rx: str | None):
+def _compile(rx: Optional[str]) -> Optional[Pattern[str]]:
     return re.compile(rx) if rx else None
 
 

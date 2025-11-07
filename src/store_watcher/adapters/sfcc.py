@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from typing import List, Optional, Pattern, Set
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
@@ -21,17 +22,31 @@ def _set_page(url: str, page: int) -> str:
 
 
 class SFCCGridAdapter(Adapter):
-    def fetch(self, session: requests.Session, url: str, include_rx, exclude_rx) -> Iterable[Item]:
-        seen_codes: set[str] = set()
-        max_pages = 10  # safety cap; adjust as needed
+    def fetch(
+        self,
+        session: requests.Session,
+        url: str,
+        include_rx: Optional[Pattern[str]],
+        exclude_rx: Optional[Pattern[str]],
+    ) -> Iterable[Item]:
+        seen_codes: Set[str] = set()
+        max_pages = 10
 
-        def parse_once(u: str) -> int:
+        def _iter_page(u: str) -> List[Item]:
             r = session.get(u, timeout=25)
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
-            found_here = 0
+            out: List[Item] = []
             for a in soup.select("a[href]"):
-                href = urljoin(u, a.get("href", ""))
+                raw_href = a.get("href")
+                href: Optional[str]
+                if isinstance(raw_href, list):
+                    href = str(raw_href[0]) if raw_href else None
+                else:
+                    href = str(raw_href) if raw_href else None
+                if not href:
+                    continue
+                href = urljoin(u, href)
                 if not PRODUCT_LINK_RE.search(href):
                     continue
                 cu = canonicalize(href)
@@ -43,26 +58,26 @@ class SFCCGridAdapter(Adapter):
                 if not code or code in seen_codes:
                     continue
                 seen_codes.add(code)
-                title = a.get("title") or a.get_text(strip=True) or None
-                yield Item(code=code, url=cu, title=title, price=None)
-                found_here += 1
-            return found_here
+                raw_title = a.get("title")
+                title: Optional[str]
+                if isinstance(raw_title, list):
+                    title = str(raw_title[0]) if raw_title else None
+                else:
+                    title = str(raw_title) if raw_title else None
+                if not title:
+                    title = a.get_text(strip=True) or None
+                out.append(Item(code=code, url=cu, title=title, price=None))
+            return out
 
-        # page 1
-        yielded = 0
-        for it in parse_once(url):
-            yielded += 1
+        for it in _iter_page(url):
             yield it
 
-        # try subsequent pages if site supports ?page=
         page = 2
         while page <= max_pages:
             next_url = _set_page(url, page)
-            found = 0
-            for it in parse_once(next_url):
-                yielded += 1
-                found += 1
-                yield it
-            if found == 0:
+            batch = _iter_page(next_url)
+            if not batch:
                 break
+            for it in batch:
+                yield it
             page += 1
