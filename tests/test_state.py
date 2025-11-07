@@ -1,7 +1,9 @@
-from pathlib import Path
 import json
-from store_watcher.state import load_state, save_state, make_present_record
+from pathlib import Path
+
+from store_watcher.state import load_state, make_present_record, save_state
 from store_watcher.utils import utcnow_iso
+
 
 def test_migrate_from_legacy_list(tmp_path: Path):
     p = tmp_path / "state.json"

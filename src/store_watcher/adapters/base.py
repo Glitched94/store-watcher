@@ -1,14 +1,18 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
-from typing import Iterable, NamedTuple, Optional
+
 import re
+from abc import ABC, abstractmethod
+from collections.abc import Iterable
+from typing import NamedTuple
+
 import requests
+
 
 class Item(NamedTuple):
     code: str
     url: str
-    title: Optional[str] = None
-    price: Optional[str] = None
+    title: str | None = None
+    price: str | None = None
 
 class Adapter(ABC):
     @abstractmethod

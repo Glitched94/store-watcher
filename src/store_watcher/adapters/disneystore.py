@@ -1,13 +1,14 @@
 from __future__ import annotations
-from typing import Iterable, Set
+
 import re
+from collections.abc import Iterable
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
-from .base import Adapter, Item
 from ..utils import canonicalize, extract_product_code
+from .base import Adapter, Item
 
 PRODUCT_LINK_RE = re.compile(r"/[^/]+\.html(?:\?|$)")
 
@@ -23,7 +24,7 @@ class DisneyStoreAdapter(Adapter):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        seen: Set[str] = set()
+        seen: set[str] = set()
         for a in soup.select("a[href]"):
             href = urljoin(url, a.get("href", ""))
             if not PRODUCT_LINK_RE.search(href):

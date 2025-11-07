@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import json
+import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from .utils import canonicalize, extract_product_code, utcnow_iso
 
@@ -17,13 +19,23 @@ state[code] = {
 }
 """
 
-def make_present_record(url: str, now_iso: str, name: str | None = None) -> Dict[str, Any]:
-    return {"url": url, "first_seen": now_iso, "status": 1, "status_since": now_iso, **({"name": name} if name else {})}
+def make_present_record(
+    url: str,
+    now_iso: str,
+    name: str | None = None,
+    host: str | None = None
+) -> dict[str, Any]:
+    rec: dict[str, Any] = {"url": url, "first_seen": now_iso, "status": 1, "status_since": now_iso}
+    if name:
+        rec["name"] = name
+    if host:
+        rec["host"] = host
+    return rec
 
-def _migrate_from_list(raw: list) -> Dict[str, Dict[str, Any]]:
+def _migrate_from_list(raw: list) -> dict[str, dict[str, Any]]:
     print("[info] Migrating legacy list -> status machine")
     now = utcnow_iso()
-    state: Dict[str, Dict[str, Any]] = {}
+    state: dict[str, dict[str, Any]] = {}
     for u in raw:
         cu = canonicalize(u)
         code = extract_product_code(cu)
@@ -33,7 +45,7 @@ def _migrate_from_list(raw: list) -> Dict[str, Dict[str, Any]]:
             state[code] = make_present_record(cu, now)
     return state
 
-def _migrate_from_dict(raw: dict) -> Dict[str, Dict[str, Any]]:
+def _migrate_from_dict(raw: dict) -> dict[str, dict[str, Any]]:
     """
     Accept prior dicts keyed by URL or code with either:
     - {'first_seen','last_seen'} timestamps, or
@@ -42,7 +54,7 @@ def _migrate_from_dict(raw: dict) -> Dict[str, Dict[str, Any]]:
     """
     print("[info] Migrating legacy dict -> status machine (if needed)")
     now = utcnow_iso()
-    migrated: Dict[str, Dict[str, Any]] = {}
+    migrated: dict[str, dict[str, Any]] = {}
 
     for k, v in raw.items():
         # Determine identity (code or URL)
@@ -62,7 +74,7 @@ def _migrate_from_dict(raw: dict) -> Dict[str, Dict[str, Any]]:
             status_since = v.get("status_since") or first_seen
             name = v.get("name")  # <-- preserve name if present
 
-            entry: Dict[str, Any] = {
+            entry: dict[str, Any] = {
                 "url": url or v.get("url", ""),
                 "first_seen": first_seen,
                 "status": status,
@@ -86,17 +98,61 @@ def _migrate_from_dict(raw: dict) -> Dict[str, Dict[str, Any]]:
 
     return migrated
 
-def load_state(path: Path) -> Dict[str, Dict[str, Any]]:
+def _json_path_override(path: Path | None) -> Path:
+    return Path(os.getenv("STATE_FILE", str(path or "seen_items.json")))
+
+def _db_path() -> Path | None:
+    p = os.getenv("STATE_DB", "").strip()
+    return Path(p) if p else None
+
+def migrate_keys_to_composite(
+    state: dict[str, dict[str, Any]],
+    default_host: str
+) -> dict[str, dict[str, Any]]:
+    """
+    Upgrade keys like '4380...' -> '<host>:4380...'. If already composite, keep.
+    Also ensure each record carries 'host' for future labeling.
+    """
+    upgraded: dict[str, dict[str, Any]] = {}
+    for k, v in state.items():
+        if ":" in k:
+            host, code = k.split(":", 1)
+            v.setdefault("host", host)
+            upgraded[k] = v
+        else:
+            # legacy numeric or url-ish key; prefer numeric code as identity
+            code = k if k.isdigit() else (extract_product_code(v.get("url", "")) or k)
+            host = v.get("host") or default_host
+            new_key = f"{host}:{code}"
+            v.setdefault("host", host)
+            upgraded[new_key] = v
+    return upgraded
+
+def load_state(path: Path | None = None) -> dict[str, dict[str, Any]]:
+    db = _db_path()
+    if db:
+        from .state_sqlite import load_state as _load_sqlite
+        return _load_sqlite(db)
+    # JSON
+    p = _json_path_override(path)
     try:
-        if path.exists():
-            raw = json.loads(path.read_text())
+        if p.exists():
+            raw = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(raw, list):
-                return _migrate_from_list(raw)
+                return _migrate_from_list(raw)    # your existing function
             if isinstance(raw, dict):
-                return _migrate_from_dict(raw)
-    except Exception as ex:
-        print("[error] Failed to load state:", ex)
+                return _migrate_from_dict(raw)    # your existing function
+    except Exception:
+        import traceback
+        traceback.print_exc()
     return {}
 
-def save_state(state: Dict[str, Dict[str, Any]], path: Path) -> None:
-    path.write_text(json.dumps(state, indent=2, sort_keys=True))
+def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> None:
+    db = _db_path()
+    if db:
+        from .state_sqlite import save_state as _save_sqlite
+        _save_sqlite(state, db)
+        return
+    # JSON
+    p = _json_path_override(path)
+    p.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")

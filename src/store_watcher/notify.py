@@ -1,15 +1,15 @@
 from __future__ import annotations
-import os
-import re
-import html
-import json
-import smtplib
-from typing import Iterable, Sequence, Tuple, Dict, Any, Optional, List
 
-import requests
+import json
+import os
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from .utils import pretty_name_from_url, short_product_url_from_state
+from typing import Any
+
+import requests
+
+from .utils import pretty_name_from_url, short_product_url_from_state, site_label
 
 # ---------- Notifier base ----------
 
@@ -63,13 +63,18 @@ class DiscordWebhookNotifier(Notifier):
     Sends Discord messages with masked links and *suppressed embeds*,
     automatically chunking into multiple messages under ~2000 chars.
     """
-    def __init__(self, webhook_url: str, username: str | None = None, avatar_url: str | None = None):
+    def __init__(
+        self,
+        webhook_url: str,
+        username: str | None = None,
+        avatar_url: str | None = None
+    ):
         self.webhook_url = webhook_url
         self.username = username
         self.avatar_url = avatar_url
 
     def _post(self, content: str) -> None:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "content": content,
             "flags": 4,  # SUPPRESS_EMBEDS
         }
@@ -124,50 +129,104 @@ def render_change_digest(
     total_count: int,
 ) -> tuple[str, str, str]:
     """
-    Returns (subject, html_body, text_body) with:
-    - Name-only links (no raw URLs)
-    - Discord markdown links using *shortest* valid product URLs
-    """
-    # Subject
-    bits = []
-    if new_codes: bits.append(f"{len(new_codes)} new")
-    if restocked_codes: bits.append(f"{len(restocked_codes)} restocked")
-    subject = "[Store Watch] " + (" & ".join(bits) if bits else "No changes") + f" (now {total_count} total)"
+    Multi-region aware renderer.
 
-    def entry(code: str) -> tuple[str, str, str]:
-        info = state.get(code, {})
+    Accepts code keys in either form:
+      - "438039197642"                          (single-site legacy)
+      - "disneystore.co.uk:438039197642"        (multi-site composite key)
+
+    Produces:
+      - subject: "[Store Watch] X new & Y restocked (now N total)"
+      - html_body: lists with region prefix and name-only links
+      - text_body: Discord-friendly Markdown with masked links and region prefix
+    """
+    # ----- helpers -----
+    def _md_escape(text: str) -> str:
+        return (text
+                .replace("\\", r"\\")
+                .replace("[", r"\[")
+                .replace("]", r"\]")
+                .replace("(", r"\(")
+                .replace(")", r"\)")
+                .replace("*", r"\*")
+                .replace("_", r"\_")
+                .replace("`", r"\`")
+                .replace("|", r"\|"))
+
+    def _masked_link(name: str, url: str) -> str:
+        return f"[{_md_escape(name)}]({url})"
+
+    def _entry(code_key: str) -> tuple[str, str, str]:
+        """
+        Returns (display_name, html_li, text_li) for one item.
+        Adds region prefix like "[US] " based on host.
+        """
+        host = ""
+        if ":" in code_key:
+            host, code = code_key.split(":", 1)
+            info = state.get(code_key, {})
+        else:
+            code = code_key
+            info = state.get(code_key, {})
+            host = info.get("host") or ""  # prefer stored host
+
         url = info.get("url", "") or str(code)
+        # Derive label from host if we have one; otherwise from URL; final fallback "US"
+        label = site_label(host or url) or "US"
+
         name = info.get("name") or pretty_name_from_url(url) or str(code)
         short_url = short_product_url_from_state(url, code if code.isdigit() else "")
 
-        # Email HTML: standard anchor
-        html_li = f'<li><a href="{short_url}">{name}</a></li>'
-        # Discord TEXT: masked link with short URL
-        text_li = f"- {_masked_link(name, short_url)}"
+        prefix = f"[{label}] "
+        html_li = f'<li>{prefix}<a href="{short_url}">{name}</a></li>'
+        text_li = f"- {prefix}[{name}]({short_url})"
         return name, html_li, text_li
 
-    # HTML body (email)
-    html_parts = []
+    # ----- subject -----
+    bits = []
+    if new_codes:
+        bits.append(f"{len(new_codes)} new")
+    if restocked_codes:
+        bits.append(f"{len(restocked_codes)} restocked")
+    subject = (
+        "[Store Watch] "
+        + (" & ".join(bits) if bits else "No changes")
+        + f" (now {total_count} total)"
+    )
+
+    # ----- HTML (email) -----
+    html_parts: list[str] = []
     if new_codes:
         html_parts.append(f"<p><strong>New items ({len(new_codes)}):</strong></p><ul>")
-        for c in sorted(new_codes): _, h, _ = entry(c); html_parts.append(h)
+        for key in sorted(new_codes):
+            _, h, _ = _entry(key)
+            html_parts.append(h)
         html_parts.append("</ul>")
     if restocked_codes:
-        html_parts.append(f"<p><strong>Restocked (≥{restock_hours}h absent) ({len(restocked_codes)}):</strong></p><ul>")
-        for c in sorted(restocked_codes): _, h, _ = entry(c); html_parts.append(h)
+        html_parts.append(
+            f"<p><strong>Restocked (≥{restock_hours}h absent) "
+            f"({len(restocked_codes)}):</strong></p><ul>"
+        )
+        for key in sorted(restocked_codes):
+            _, h, _ = _entry(key)
+            html_parts.append(h)
         html_parts.append("</ul>")
     html_parts.append(f"<p>Total items now: {total_count}</p>")
     html_body = "\n".join(html_parts)
 
-    # Discord-friendly text
-    text_lines = []
+    # ----- TEXT (Discord-friendly) -----
+    text_lines: list[str] = []
     if new_codes:
         text_lines.append(f"New items ({len(new_codes)}):")
-        for c in sorted(new_codes): _, _, t = entry(c); text_lines.append(t)
+        for key in sorted(new_codes):
+            _, _, t = _entry(key)
+            text_lines.append(t)
         text_lines.append("")
     if restocked_codes:
         text_lines.append(f"Restocked (≥{restock_hours}h absent) ({len(restocked_codes)}):")
-        for c in sorted(restocked_codes): _, _, t = entry(c); text_lines.append(t)
+        for key in sorted(restocked_codes):
+            _, _, t = _entry(key)
+            text_lines.append(t)
         text_lines.append("")
     text_lines.append(f"Total items now: {total_count}")
     text_body = "\n".join(text_lines).strip()
@@ -188,7 +247,16 @@ def build_notifiers_from_env() -> list[Notifier]:
     email_to = os.getenv("EMAIL_TO", "")
 
     if smtp_host and smtp_user and smtp_pass and email_to:
-        notifiers.append(EmailNotifier(smtp_host, smtp_port, smtp_user, smtp_pass, email_from, email_to))
+        notifiers.append(
+            EmailNotifier(
+                smtp_host,
+                smtp_port,
+                smtp_user,
+                smtp_pass,
+                email_from,
+                email_to
+            )
+        )
 
     # Discord
     discord_url = os.getenv("DISCORD_WEBHOOK_URL", "")
@@ -198,9 +266,3 @@ def build_notifiers_from_env() -> list[Notifier]:
         notifiers.append(DiscordWebhookNotifier(discord_url, discord_name, discord_avatar))
 
     return notifiers
-
-def _md_escape(text: str) -> str:
-    return text.replace("[", r"\[").replace("]", r"\]").replace("(", r"\(").replace(")", r"\)")
-
-def _masked_link(name: str, url: str) -> str:
-    return f"[{_md_escape(name)}]({url})"

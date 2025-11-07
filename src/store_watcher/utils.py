@@ -1,6 +1,8 @@
 from __future__ import annotations
+
+import html as _html
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -14,7 +16,7 @@ MINOR_WORDS = {
 
 # --- Time helpers ---
 def utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 def iso_to_dt(s: str):
     if s.endswith("Z"):
@@ -65,7 +67,7 @@ def html_to_text(s: str) -> str:
     s = re.sub(r"</?(ul|ol|strong|em|b|i|u|p|div|span)[^>]*>", "", s, flags=re.I)
     s = re.sub(r"<a [^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>", r"\2 (\1)", s, flags=re.I)
     s = re.sub(r"<[^>]+>", "", s)  # strip remaining tags
-    return html.unescape(s).strip()
+    return _html.unescape(s).strip()
 
 def escape_md(s: str) -> str:
     """Escape Discord Markdown special chars."""
@@ -76,9 +78,9 @@ def truncate(s: str, n: int) -> str:
 
 def slug_to_title(slug: str) -> str:
     """
-    Convert 'disneyland-70th-anniversary-vault-collection-pin-display-frame-with-three-pins-limited-edition-438018657693'
-    -> 'Disneyland 70th Anniversary Vault Collection Pin Display Frame with Three Pins Limited Edition'
-    (stops before trailing numeric code tokens)
+    Convert:
+      'disneyland-70th-anniversary-...-limited-edition-438018657693'
+    into a title-cased string, stopping before trailing numeric code tokens.
     """
     # remove trailing numeric token(s)
     parts = slug.split("-")
@@ -134,3 +136,33 @@ def short_product_url_from_state(url: str, code: str) -> str:
         return urlunsplit(("https", "www.disneystore.com", f"/{code}.html", "", ""))
     # fallback: original canonicalized
     return canonicalize(url)
+
+def domain_of(url: str) -> str:
+    """Return lowercased registrable host without www prefix (e.g., disneystore.co.uk)."""
+    host = urlsplit(url).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
+
+SITE_LABELS = {
+    "disneystore.com": "US",
+    "disneystore.eu": "EU",
+    "disneystore.co.uk": "UK",
+    "disneystore.asia": "ASIA",
+    "disney.co.jp": "JP",
+    "disneystore.com.au": "AU",
+}
+
+def site_label(s: str) -> str:
+    """
+    Accepts either a full URL or a bare host and returns a short region label.
+    Falls back to the host itself if unknown; never returns empty string.
+    """
+    if not s:
+        return "US"
+    # If it's a URL (has scheme or slash), derive host; else treat as host
+    if "://" in s or "/" in s:
+        host = domain_of(s)
+    else:
+        host = s.lower()
+        if host.startswith("www."):
+            host = host[4:]
+    return SITE_LABELS.get(host, host or "US")

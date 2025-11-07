@@ -1,5 +1,5 @@
 from store_watcher.notify import render_change_digest
-from store_watcher.utils import pretty_name_from_url
+
 
 def _state(url: str, name: str | None = None):
     return {"url": url, **({"name": name} if name else {})}

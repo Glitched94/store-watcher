@@ -1,5 +1,3 @@
-import re
-from types import SimpleNamespace
 from store_watcher.adapters.disneystore import DisneyStoreAdapter
 
 HTML = """

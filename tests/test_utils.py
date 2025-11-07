@@ -1,11 +1,13 @@
 import pytest
+
 from store_watcher.utils import (
     canonicalize,
     extract_product_code,
     pretty_name_from_url,
-    slug_to_title,
     short_product_url_from_state,
+    slug_to_title,
 )
+
 
 def test_canonicalize_basic():
     u = "https://WWW.disneystore.com//foo//bar.html?searchType=redirect#frag"
