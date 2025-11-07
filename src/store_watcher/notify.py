@@ -13,12 +13,16 @@ from .utils import pretty_name_from_url, short_product_url_from_state, site_labe
 
 # ---------- Notifier base ----------
 
+
 class Notifier:
     """Abstract notifier. Implement send()."""
+
     def send(self, title: str, html_body: str, text_body: str | None = None) -> None:
         raise NotImplementedError
 
+
 # ---------- Email ----------
+
 
 class EmailNotifier(Notifier):
     def __init__(
@@ -56,18 +60,18 @@ class EmailNotifier(Notifier):
             s.login(self.user, self.password)
             s.sendmail(self.email_from, [self.email_to], msg.as_string())
 
+
 # ---------- Discord Webhook ----------
+
 
 class DiscordWebhookNotifier(Notifier):
     """
     Sends Discord messages with masked links and *suppressed embeds*,
     automatically chunking into multiple messages under ~2000 chars.
     """
+
     def __init__(
-        self,
-        webhook_url: str,
-        username: str | None = None,
-        avatar_url: str | None = None
+        self, webhook_url: str, username: str | None = None, avatar_url: str | None = None
     ):
         self.webhook_url = webhook_url
         self.username = username
@@ -117,7 +121,9 @@ class DiscordWebhookNotifier(Notifier):
         if buf:
             self._post("\n".join(buf))
 
+
 # ---------- Rendering helpers ----------
+
 
 def render_change_digest(
     *,
@@ -125,7 +131,7 @@ def render_change_digest(
     restocked_codes,
     state,
     restock_hours: int,
-    target_url: str,   # kept for signature compat; not shown
+    target_url: str,  # kept for signature compat; not shown
     total_count: int,
 ) -> tuple[str, str, str]:
     """
@@ -140,18 +146,20 @@ def render_change_digest(
       - html_body: lists with region prefix and name-only links
       - text_body: Discord-friendly Markdown with masked links and region prefix
     """
+
     # ----- helpers -----
     def _md_escape(text: str) -> str:
-        return (text
-                .replace("\\", r"\\")
-                .replace("[", r"\[")
-                .replace("]", r"\]")
-                .replace("(", r"\(")
-                .replace(")", r"\)")
-                .replace("*", r"\*")
-                .replace("_", r"\_")
-                .replace("`", r"\`")
-                .replace("|", r"\|"))
+        return (
+            text.replace("\\", r"\\")
+            .replace("[", r"\[")
+            .replace("]", r"\]")
+            .replace("(", r"\(")
+            .replace(")", r"\)")
+            .replace("*", r"\*")
+            .replace("_", r"\_")
+            .replace("`", r"\`")
+            .replace("|", r"\|")
+        )
 
     def _masked_link(name: str, url: str) -> str:
         return f"[{_md_escape(name)}]({url})"
@@ -233,7 +241,9 @@ def render_change_digest(
 
     return subject, html_body, text_body
 
+
 # ---------- Factory from env ----------
+
 
 def build_notifiers_from_env() -> list[Notifier]:
     notifiers: list[Notifier] = []
@@ -248,14 +258,7 @@ def build_notifiers_from_env() -> list[Notifier]:
 
     if smtp_host and smtp_user and smtp_pass and email_to:
         notifiers.append(
-            EmailNotifier(
-                smtp_host,
-                smtp_port,
-                smtp_user,
-                smtp_pass,
-                email_from,
-                email_to
-            )
+            EmailNotifier(smtp_host, smtp_port, smtp_user, smtp_pass, email_from, email_to)
         )
 
     # Discord

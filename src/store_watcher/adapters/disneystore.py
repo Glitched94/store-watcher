@@ -12,6 +12,7 @@ from .base import Adapter, Item
 
 PRODUCT_LINK_RE = re.compile(r"/[^/]+\.html(?:\?|$)")
 
+
 class DisneyStoreAdapter(Adapter):
     """
     Fetch items from a Disney Store category grid endpoint that returns server-rendered HTML, e.g.:
@@ -42,5 +43,5 @@ class DisneyStoreAdapter(Adapter):
             seen.add(code)
 
             # Optional: best-effort title (safe; may be None)
-            title = (a.get("title") or a.get_text(strip=True) or None)
+            title = a.get("title") or a.get_text(strip=True) or None
             yield Item(code=code, url=cu, title=title, price=None)

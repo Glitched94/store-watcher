@@ -4,9 +4,12 @@ from store_watcher.notify import render_change_digest
 def _state(url: str, name: str | None = None):
     return {"url": url, **({"name": name} if name else {})}
 
+
 def test_render_uses_masked_links_and_short_urls():
     state = {
-        "438039197642": _state("https://www.disneystore.com/animal-pin-the-muppets-438039197642.html"),
+        "438039197642": _state(
+            "https://www.disneystore.com/animal-pin-the-muppets-438039197642.html"
+        ),
         "438018657693": _state("https://www.disneystore.com/xyz-438018657693.html", name="XYZ Pin"),
     }
     subject, html_body, text_body = render_change_digest(

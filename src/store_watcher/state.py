@@ -19,11 +19,9 @@ state[code] = {
 }
 """
 
+
 def make_present_record(
-    url: str,
-    now_iso: str,
-    name: str | None = None,
-    host: str | None = None
+    url: str, now_iso: str, name: str | None = None, host: str | None = None
 ) -> dict[str, Any]:
     rec: dict[str, Any] = {"url": url, "first_seen": now_iso, "status": 1, "status_since": now_iso}
     if name:
@@ -31,6 +29,7 @@ def make_present_record(
     if host:
         rec["host"] = host
     return rec
+
 
 def _migrate_from_list(raw: list) -> dict[str, dict[str, Any]]:
     print("[info] Migrating legacy list -> status machine")
@@ -44,6 +43,7 @@ def _migrate_from_list(raw: list) -> dict[str, dict[str, Any]]:
         if code not in state:
             state[code] = make_present_record(cu, now)
     return state
+
 
 def _migrate_from_dict(raw: dict) -> dict[str, dict[str, Any]]:
     """
@@ -98,16 +98,18 @@ def _migrate_from_dict(raw: dict) -> dict[str, dict[str, Any]]:
 
     return migrated
 
+
 def _json_path_override(path: Path | None) -> Path:
     return Path(os.getenv("STATE_FILE", str(path or "seen_items.json")))
+
 
 def _db_path() -> Path | None:
     p = os.getenv("STATE_DB", "").strip()
     return Path(p) if p else None
 
+
 def migrate_keys_to_composite(
-    state: dict[str, dict[str, Any]],
-    default_host: str
+    state: dict[str, dict[str, Any]], default_host: str
 ) -> dict[str, dict[str, Any]]:
     """
     Upgrade keys like '4380...' -> '<host>:4380...'. If already composite, keep.
@@ -128,10 +130,12 @@ def migrate_keys_to_composite(
             upgraded[new_key] = v
     return upgraded
 
+
 def load_state(path: Path | None = None) -> dict[str, dict[str, Any]]:
     db = _db_path()
     if db:
         from .state_sqlite import load_state as _load_sqlite
+
         return _load_sqlite(db)
     # JSON
     p = _json_path_override(path)
@@ -139,18 +143,21 @@ def load_state(path: Path | None = None) -> dict[str, dict[str, Any]]:
         if p.exists():
             raw = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(raw, list):
-                return _migrate_from_list(raw)    # your existing function
+                return _migrate_from_list(raw)  # your existing function
             if isinstance(raw, dict):
-                return _migrate_from_dict(raw)    # your existing function
+                return _migrate_from_dict(raw)  # your existing function
     except Exception:
         import traceback
+
         traceback.print_exc()
     return {}
+
 
 def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> None:
     db = _db_path()
     if db:
         from .state_sqlite import save_state as _save_sqlite
+
         _save_sqlite(state, db)
         return
     # JSON

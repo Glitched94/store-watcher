@@ -14,6 +14,7 @@ class Item(NamedTuple):
     title: str | None = None
     price: str | None = None
 
+
 class Adapter(ABC):
     @abstractmethod
     def fetch(

@@ -16,6 +16,7 @@ from .utils import site_label
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
+
 def _h_since(iso: str | None) -> float | None:
     if not iso:
         return None
@@ -26,8 +27,10 @@ def _h_since(iso: str | None) -> float | None:
         return None
     return max(0.0, (_utcnow() - then).total_seconds() / 3600.0)
 
+
 def _load_state_current() -> dict[str, dict[str, Any]]:
     return load_any_state()
+
 
 def _state_version() -> str:
     db = os.getenv("STATE_DB", "").strip()
@@ -35,9 +38,10 @@ def _state_version() -> str:
         if db:
             return str(int(Path(db).stat().st_mtime))
         else:
-            return str(int(Path(os.getenv("STATE_FILE","seen_items.json")).stat().st_mtime))
+            return str(int(Path(os.getenv("STATE_FILE", "seen_items.json")).stat().st_mtime))
     except Exception:
         return "0"
+
 
 def create_app(dotenv_path: str | None = None) -> FastAPI:
     load_dotenv(dotenv_path=dotenv_path)
@@ -177,7 +181,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
         for lab in labels:
             n = totals.get(lab, 0)
             items.append(
-                f'''
+                f"""
                 <div class="rounded-2xl p-[1px] bg-gradient-to-br from-cyan-500/40 to-purple-500/40
                             shadow-[0_0_35px_rgba(99,102,241,0.15)]">
                 <div class="rounded-2xl bg-slate-900/70 backdrop-blur border border-slate-800/60 p-3">
@@ -185,7 +189,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
                     <div class="text-2xl font-semibold text-slate-100">{n}</div>
                 </div>
                 </div>
-                '''
+                """
             )
         return HTMLResponse("".join(items))
 
@@ -207,7 +211,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
             try:
                 y, m, d = int(s[0:4]), int(s[5:7]), int(s[8:10])
                 hh, mm, ss = int(s[11:13]), int(s[14:16]), int(s[17:19])
-                return (((((y * 12 + m) * 31 + d) * 24 + hh) * 60 + mm) * 60 + ss)
+                return ((((y * 12 + m) * 31 + d) * 24 + hh) * 60 + mm) * 60 + ss
             except Exception:
                 return 0
 
@@ -247,11 +251,17 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
             since = v.get("status_since") or v.get("first_seen")
             h = _h_since(since) or 0.0
             chip_cls, chip_txt = (
-                ("bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]", "Present")
-                if status == 1 else
-                ("bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]", "Absent")
+                (
+                    "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]",
+                    "Present",
+                )
+                if status == 1
+                else (
+                    "bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]",
+                    "Absent",
+                )
             )
-            return f'''
+            return f"""
             <div class="h-full rounded-2xl p-[1px] bg-gradient-to-br from-cyan-500/40 to-purple-500/40
                         shadow-[0_0_35px_rgba(99,102,241,0.15)]">
             <div class="h-full rounded-2xl bg-slate-900/70 backdrop-blur border border-slate-800/60 p-4 flex flex-col">
@@ -266,7 +276,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
                 since {since or "?"} <span class="ml-1 text-slate-500">(~{h:.1f}h)</span>
                 </div>
             </div>
-            </div>'''
+            </div>"""
 
         rows = [card(k, v) for k, v in page_items]
         if not rows and page == 1:
@@ -277,6 +287,7 @@ def create_app(dotenv_path: str | None = None) -> FastAPI:
         if end < total:
             # Preserve current filters in next-page URL
             from urllib.parse import urlencode
+
             params = dict(region=region, q=q, page=page + 1, page_size=page_size)
             url = "/api/state?" + urlencode(params)
             more = f'<div class="col-span-full h-0 p-0 m-0" hx-get="{url}" hx-trigger="revealed" hx-swap="outerHTML"></div>'

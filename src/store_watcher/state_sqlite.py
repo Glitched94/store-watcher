@@ -9,6 +9,7 @@ from typing import Any
 # items(key TEXT PRIMARY KEY, host TEXT, code TEXT, url TEXT, name TEXT,
 #       first_seen TEXT, status INTEGER, status_since TEXT)
 
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
@@ -16,8 +17,10 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
-    conn.execute("""
+    conn.execute(
+        """
     CREATE TABLE IF NOT EXISTS items (
       key TEXT PRIMARY KEY,
       host TEXT,
@@ -28,13 +31,17 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
       status INTEGER,
       status_since TEXT
     );
-    """)
+    """
+    )
     conn.commit()
+
 
 def load_state(db_path: Path) -> dict[str, dict[str, Any]]:
     conn = _connect(db_path)
     _ensure_schema(conn)
-    cur = conn.execute("SELECT key, host, code, url, name, first_seen, status, status_since FROM items")
+    cur = conn.execute(
+        "SELECT key, host, code, url, name, first_seen, status, status_since FROM items"
+    )
     out: dict[str, dict[str, Any]] = {}
     for key, host, _code, url, name, first_seen, status, status_since in cur:
         rec = {
@@ -50,6 +57,7 @@ def load_state(db_path: Path) -> dict[str, dict[str, Any]]:
         out[key] = rec
     conn.close()
     return out
+
 
 def save_state(state: dict[str, dict[str, Any]], db_path: Path) -> None:
     conn = _connect(db_path)
@@ -67,7 +75,8 @@ def save_state(state: dict[str, dict[str, Any]], db_path: Path) -> None:
         )
         for key, rec in state.items()
     )
-    conn.executemany("""
+    conn.executemany(
+        """
       INSERT INTO items (key, host, code, url, name, first_seen, status, status_since)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
@@ -78,6 +87,8 @@ def save_state(state: dict[str, dict[str, Any]], db_path: Path) -> None:
         first_seen=excluded.first_seen,
         status=excluded.status,
         status_since=excluded.status_since
-    """, list(rows))
+    """,
+        list(rows),
+    )
     conn.commit()
     conn.close()

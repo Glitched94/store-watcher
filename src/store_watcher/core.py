@@ -22,8 +22,10 @@ ADAPTERS: dict[str, Adapter] = {
     "disneystore": SFCCGridAdapter(),  # alias for convenience
 }
 
+
 def _compile(rx: str | None):
     return re.compile(rx) if rx else None
+
 
 def _split_urls(urls: str) -> list[str]:
     # split by comma or newline; strip empties
@@ -36,6 +38,7 @@ def _split_urls(urls: str) -> list[str]:
             seen.add(p)
             out.append(p)
     return out
+
 
 def run_watcher(
     site: str,
@@ -54,7 +57,7 @@ def run_watcher(
 
     # accept TARGET_URL or TARGET_URLS (multi)
     env_single = os.getenv("TARGET_URL", "").strip()
-    env_multi  = os.getenv("TARGET_URLS", "").strip()
+    env_multi = os.getenv("TARGET_URLS", "").strip()
     urls: list[str] = []
 
     if url_override:
@@ -195,7 +198,7 @@ def run_watcher(
                 restocked_codes=restocked_codes,
                 state=state,
                 restock_hours=restock_hours,
-                target_url="(multiple)",      # not shown in messages
+                target_url="(multiple)",  # not shown in messages
                 total_count=total_now,
             )
             for n in notifiers:

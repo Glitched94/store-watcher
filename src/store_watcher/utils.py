@@ -10,18 +10,39 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 MINOR_WORDS = {
-    "a","an","and","as","at","but","by","for","from","in","into","of","on","or",
-    "the","to","with","without","over","under"
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "but",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+    "without",
+    "over",
+    "under",
 }
+
 
 # --- Time helpers ---
 def utcnow_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
+
 def iso_to_dt(s: str):
     if s.endswith("Z"):
         s = s[:-1] + "+00:00"
     return datetime.fromisoformat(s)
+
 
 # --- URL canonicalization & product codes ---
 def canonicalize(url: str) -> str:
@@ -33,8 +54,10 @@ def canonicalize(url: str) -> str:
     path = re.sub(r"/{2,}", "/", u.path)
     return urlunsplit((scheme, netloc, path, "", ""))
 
+
 CODE_RE = re.compile(r"/([^/]+)\.html(?:\?|$)", re.IGNORECASE)
 DIGITS_RE = re.compile(r"(\d{6,})")
+
 
 def extract_product_code(url: str) -> str | None:
     m = CODE_RE.search(url)
@@ -43,6 +66,7 @@ def extract_product_code(url: str) -> str | None:
     filename = m.group(1)
     codes = DIGITS_RE.findall(filename)
     return codes[-1] if codes else None
+
 
 # --- HTTP session with retries/backoff ---
 def make_session() -> requests.Session:
@@ -55,8 +79,11 @@ def make_session() -> requests.Session:
         raise_on_status=False,
     )
     s.mount("https://", HTTPAdapter(max_retries=retries))
-    s.headers.update({"User-Agent": "StoreWatcher/2.0 (+https://github.com/yourname/store-watcher)"})
+    s.headers.update(
+        {"User-Agent": "StoreWatcher/2.0 (+https://github.com/yourname/store-watcher)"}
+    )
     return s
+
 
 def html_to_text(s: str) -> str:
     """Very small HTML→text converter good enough for Discord/webhooks."""
@@ -69,12 +96,15 @@ def html_to_text(s: str) -> str:
     s = re.sub(r"<[^>]+>", "", s)  # strip remaining tags
     return _html.unescape(s).strip()
 
+
 def escape_md(s: str) -> str:
     """Escape Discord Markdown special chars."""
     return re.sub(r"([\\*_`~|>])", r"\\\1", s)
 
+
 def truncate(s: str, n: int) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
+
 
 def slug_to_title(slug: str) -> str:
     """
@@ -102,11 +132,12 @@ def slug_to_title(slug: str) -> str:
             titled.append(base.upper())
         elif base.isdigit():
             titled.append(base)
-        elif i not in (0, len(words)-1) and base.lower() in MINOR_WORDS:
+        elif i not in (0, len(words) - 1) and base.lower() in MINOR_WORDS:
             titled.append(base.lower())
         else:
             titled.append(base.capitalize())
     return " ".join(titled)
+
 
 def pretty_name_from_url(url: str) -> str:
     """
@@ -118,11 +149,13 @@ def pretty_name_from_url(url: str) -> str:
     filename = m.group(1)  # slug-with-code
     return slug_to_title(filename)
 
+
 def suppress_embed_url(url: str) -> str:
     """
     Wrap URL in angle brackets to prevent Discord auto-embeds.
     """
     return f"<{url}>"
+
 
 def short_product_url_from_state(url: str, code: str) -> str:
     """
@@ -137,10 +170,12 @@ def short_product_url_from_state(url: str, code: str) -> str:
     # fallback: original canonicalized
     return canonicalize(url)
 
+
 def domain_of(url: str) -> str:
     """Return lowercased registrable host without www prefix (e.g., disneystore.co.uk)."""
     host = urlsplit(url).netloc.lower()
     return host[4:] if host.startswith("www.") else host
+
 
 SITE_LABELS = {
     "disneystore.com": "US",
@@ -150,6 +185,7 @@ SITE_LABELS = {
     "disney.co.jp": "JP",
     "disneystore.com.au": "AU",
 }
+
 
 def site_label(s: str) -> str:
     """

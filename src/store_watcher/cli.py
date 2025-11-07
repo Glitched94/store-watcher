@@ -13,6 +13,7 @@ from .ui import create_app
 
 app = typer.Typer(help="Watch store pages and alert on new/restocked items.")
 
+
 @app.command("watch")
 def watch(
     site: str = typer.Option("disneystore", help="Adapter/site to use (sfcc/disneystore)"),
@@ -27,7 +28,7 @@ def watch(
 ):
     run_watcher(
         site=site,
-        url_override=urls or url,   # pass whichever is set; core will split
+        url_override=urls or url,  # pass whichever is set; core will split
         interval=every,
         restock_hours=restock,
         include_re=include_re or None,
@@ -35,6 +36,7 @@ def watch(
         once=once,
         dotenv_path=env,
     )
+
 
 @app.command("state")
 def state_cmd(
@@ -66,6 +68,7 @@ def state_cmd(
     else:
         raise typer.BadParameter("action must be 'show' or 'clear'")
 
+
 @app.command("migrate")
 def migrate_json_to_sqlite(
     json_path: str = typer.Option("seen_items.json", help="Path to legacy JSON state"),
@@ -92,6 +95,7 @@ def migrate_json_to_sqlite(
     save_any(state)  # goes to SQLite because STATE_DB is set
     typer.echo(f"Migrated {len(state)} records -> {sqlite_path}")
 
+
 @app.command("ui")
 def ui(
     host: str = typer.Option("127.0.0.1", help="Bind address"),
@@ -101,6 +105,7 @@ def ui(
 ):
     app = create_app(dotenv_path=env)
     uvicorn.run(app, host=host, port=port, reload=reload)
+
 
 if __name__ == "__main__":
     app()

@@ -12,11 +12,13 @@ from .base import Adapter, Item
 
 PRODUCT_LINK_RE = re.compile(r"/[^/]+\.html(?:\?|$)")
 
+
 def _set_page(url: str, page: int) -> str:
     u = urlsplit(url)
     q = parse_qs(u.query, keep_blank_values=True)
     q["page"] = [str(page)]
     return urlunsplit((u.scheme, u.netloc, u.path, urlencode(q, doseq=True), ""))
+
 
 class SFCCGridAdapter(Adapter):
     def fetch(self, session: requests.Session, url: str, include_rx, exclude_rx) -> Iterable[Item]:
@@ -41,7 +43,7 @@ class SFCCGridAdapter(Adapter):
                 if not code or code in seen_codes:
                     continue
                 seen_codes.add(code)
-                title = (a.get("title") or a.get_text(strip=True) or None)
+                title = a.get("title") or a.get_text(strip=True) or None
                 yield Item(code=code, url=cu, title=title, price=None)
                 found_here += 1
             return found_here

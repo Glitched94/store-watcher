@@ -8,19 +8,31 @@ HTML = """
 </body></html>
 """
 
+
 class DummyResp:
     status_code = 200
-    def __init__(self, text): self.text = text
-    def raise_for_status(self): pass
+
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
 
 class DummySession:
-    def __init__(self, html): self._html = html
-    def get(self, url, timeout=25): return DummyResp(self._html)
+    def __init__(self, html):
+        self._html = html
+
+    def get(self, url, timeout=25):
+        return DummyResp(self._html)
+
 
 def test_adapter_parses_codes_and_titles():
     adapter = DisneyStoreAdapter()
     session = DummySession(HTML)
-    items = list(adapter.fetch(session, "https://www.disneystore.com/grid", include_rx=None, exclude_rx=None))
+    items = list(
+        adapter.fetch(session, "https://www.disneystore.com/grid", include_rx=None, exclude_rx=None)
+    )
     codes = {i.code for i in items}
     assert "438039197642" in codes
     assert "438039196577" in codes
