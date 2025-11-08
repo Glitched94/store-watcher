@@ -15,7 +15,14 @@ from .adapters.base import Adapter, Item
 from .adapters.sfcc import SFCCGridAdapter
 from .notify import Notifier, build_notifiers_from_env, render_change_digest
 from .state import load_state, make_present_record, migrate_keys_to_composite, save_state
-from .utils import domain_of, iso_to_dt, make_session, pretty_name_from_url, site_label, utcnow_iso
+from .utils import (
+    domain_of,
+    iso_to_dt,
+    make_session,
+    pretty_name_from_url,
+    site_label,
+    utcnow_iso,
+)
 
 ADAPTERS: dict[str, Adapter] = {
     "sfcc": SFCCGridAdapter(),
@@ -102,6 +109,9 @@ def run_watcher(
 
     session = make_session()
 
+    # Hosts this watcher manages
+    managed_hosts: set[str] = {domain_of(u) for u in urls}
+
     def tick() -> None:
         nonlocal state
         now_iso = utcnow_iso()
@@ -132,7 +142,6 @@ def run_watcher(
                 present_keys.add(key)
                 if it.url:
                     url_for_key[key] = it.url
-                # prefer adapter title; else derive from URL
                 if it.title:
                     name_for_key[key] = it.title
                 elif it.url:
@@ -142,12 +151,18 @@ def run_watcher(
                 if it.image:
                     image_for_key[key] = it.image
             site_current_counts[label] = site_current_counts.get(label, 0) + count
+            print(f"[debug] fetched {count:>3} items from {label} :: {url}")
 
+        # 2) Mark absences (only for hosts this watcher manages)
         for key, info in state.items():
+            key_host = key.split(":", 1)[0]
+            if key_host not in managed_hosts:
+                continue
             if key not in present_keys and info.get("status", 1) == 1:
                 info["status"] = 0
                 info["status_since"] = now_iso
 
+        # 3) Handle present items
         for key in present_keys:
             preferred_url = url_for_key.get(key, state.get(key, {}).get("url", ""))
             preferred_name = name_for_key.get(key) or state.get(key, {}).get("name")
@@ -180,8 +195,10 @@ def run_watcher(
                 else:
                     info["status"] = 1
 
+        # 4) Persist
         save_state(state, state_path)
 
+        # 5) Notify, grouped by site
         new_codes: list[str] = []
         restocked_codes: list[str] = []
         for _lab, keys in site_new.items():
