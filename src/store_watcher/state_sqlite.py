@@ -7,7 +7,7 @@ from typing import Any
 
 # Schema:
 # items(key TEXT PRIMARY KEY, host TEXT, code TEXT, url TEXT, name TEXT,
-#       first_seen TEXT, status INTEGER, status_since TEXT)
+#       first_seen TEXT, status INTEGER, status_since TEXT, image TEXT)
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -29,10 +29,16 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
       name TEXT,
       first_seen TEXT,
       status INTEGER,
-      status_since TEXT
+      status_since TEXT,
+      image TEXT
     );
     """
     )
+    # add image column if missing (older DBs)
+    try:
+        conn.execute("ALTER TABLE items ADD COLUMN image TEXT;")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
 
@@ -40,11 +46,11 @@ def load_state(db_path: Path) -> dict[str, dict[str, Any]]:
     conn = _connect(db_path)
     _ensure_schema(conn)
     cur = conn.execute(
-        "SELECT key, host, code, url, name, first_seen, status, status_since FROM items"
+        "SELECT key, host, code, url, name, first_seen, status, status_since, image FROM items"
     )
     out: dict[str, dict[str, Any]] = {}
-    for key, host, _code, url, name, first_seen, status, status_since in cur:
-        rec = {
+    for key, host, _code, url, name, first_seen, status, status_since, image in cur:
+        rec: dict[str, Any] = {
             "url": url or "",
             "first_seen": first_seen or "",
             "status": int(status or 0),
@@ -54,6 +60,8 @@ def load_state(db_path: Path) -> dict[str, dict[str, Any]]:
             rec["name"] = name
         if host:
             rec["host"] = host
+        if image:
+            rec["image"] = image
         out[key] = rec
     conn.close()
     return out
@@ -62,7 +70,7 @@ def load_state(db_path: Path) -> dict[str, dict[str, Any]]:
 def save_state(state: dict[str, dict[str, Any]], db_path: Path) -> None:
     conn = _connect(db_path)
     _ensure_schema(conn)
-    rows: Iterable[tuple[str, str, str, str, str, str, int, str]] = (
+    rows: Iterable[tuple[str, str, str, str, str, str, int, str, str]] = (
         (
             key,
             rec.get("host") or "",
@@ -72,13 +80,14 @@ def save_state(state: dict[str, dict[str, Any]], db_path: Path) -> None:
             rec.get("first_seen") or "",
             int(rec.get("status", 0)),
             rec.get("status_since") or rec.get("first_seen") or "",
+            rec.get("image") or "",
         )
         for key, rec in state.items()
     )
     conn.executemany(
         """
-      INSERT INTO items (key, host, code, url, name, first_seen, status, status_since)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO items (key, host, code, url, name, first_seen, status, status_since, image)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
         host=excluded.host,
         code=excluded.code,
@@ -86,7 +95,8 @@ def save_state(state: dict[str, dict[str, Any]], db_path: Path) -> None:
         name=excluded.name,
         first_seen=excluded.first_seen,
         status=excluded.status,
-        status_since=excluded.status_since
+        status_since=excluded.status_since,
+        image=excluded.image
     """,
         list(rows),
     )

@@ -1,34 +1,30 @@
 from __future__ import annotations
 
-import re
-from abc import ABC, abstractmethod
-from collections.abc import Iterable
-from typing import NamedTuple
+from dataclasses import dataclass
+from typing import Iterable, Optional, Pattern
 
 import requests
 
 
-class Item(NamedTuple):
+@dataclass(slots=True)
+class Item:
     code: str
     url: str
-    title: str | None = None
-    price: str | None = None
+    title: Optional[str] = None
+    price: Optional[str] = None
+    image: Optional[str] = None
 
 
-class Adapter(ABC):
-    @abstractmethod
-    def fetch(
+class Adapter:
+    """
+    Simple adapter base. Implement `fetch(session, url, include_rx, exclude_rx) -> Iterable[Item]`.
+    """
+
+    def fetch(  # pragma: no cover - interface
         self,
         session: requests.Session,
         url: str,
-        include_rx: re.Pattern | None,
-        exclude_rx: re.Pattern | None,
+        include_rx: Optional[Pattern[str]],
+        exclude_rx: Optional[Pattern[str]],
     ) -> Iterable[Item]:
-        """
-        Return an iterable of Items (code, url[, title, price]) currently visible on the list page.
-        Implementations should:
-          - be idempotent
-          - normalize URLs
-          - filter by include/exclude regex if provided
-        """
         raise NotImplementedError

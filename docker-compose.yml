@@ -1,0 +1,66 @@
+services:
+  ui:
+    build: .
+    image: store-watcher:latest
+    container_name: store-watcher-ui
+    command: >
+      uvicorn store_watcher.ui:create_app
+      --factory --host 0.0.0.0 --port 8000
+    environment:
+      STATE_DB: /app/data/state.db
+    volumes:
+      - data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  watcher_us:
+    image: store-watcher:latest
+    container_name: store-watcher-us
+    command: store-watcher watch
+    env_file:
+      - ./.env.us
+    environment:
+      STATE_DB: /app/data/state.db
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+  watcher_eu:
+    image: store-watcher:latest
+    container_name: store-watcher-eu
+    command: store-watcher watch
+    env_file:
+      - ./.env.eu
+    environment:
+      STATE_DB: /app/data/state.db
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+  watcher_asia:
+    image: store-watcher:latest
+    container_name: store-watcher-asia
+    command: store-watcher watch
+    env_file:
+      - ./.env.asia
+    environment:
+      STATE_DB: /app/data/state.db
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+  watcher_au:
+    image: store-watcher:latest
+    container_name: store-watcher-au
+    command: store-watcher watch
+    env_file:
+      - ./.env.au
+    environment:
+      STATE_DB: /app/data/state.db
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+volumes:
+  data:

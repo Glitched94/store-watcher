@@ -15,10 +15,9 @@ from .adapters.base import Adapter, Item
 from .adapters.sfcc import SFCCGridAdapter
 from .notify import Notifier, build_notifiers_from_env, render_change_digest
 from .state import load_state, make_present_record, migrate_keys_to_composite, save_state
-from .utils import domain_of, iso_to_dt, make_session, site_label, utcnow_iso
+from .utils import domain_of, iso_to_dt, make_session, pretty_name_from_url, site_label, utcnow_iso
 
 ADAPTERS: dict[str, Adapter] = {
-    # we can reuse the same adapter for all Disney regions
     "sfcc": SFCCGridAdapter(),
     "disneystore": SFCCGridAdapter(),  # alias for convenience
 }
@@ -29,9 +28,7 @@ def _compile(rx: Optional[str]) -> Optional[Pattern[str]]:
 
 
 def _split_urls(urls: str) -> list[str]:
-    # split by comma or newline; strip empties
     parts = [p.strip() for p in re.split(r"[,\n]", urls) if p.strip()]
-    # de-dup, preserve order
     seen: set[str] = set()
     out: list[str] = []
     for p in parts:
@@ -51,12 +48,10 @@ def run_watcher(
     once: bool,
     dotenv_path: str | None = None,
 ) -> None:
-    # dotenv
     load_dotenv(dotenv_path=dotenv_path)
 
     adapter = ADAPTERS.get(site) or ADAPTERS["sfcc"]
 
-    # accept TARGET_URL or TARGET_URLS (multi)
     env_single = os.getenv("TARGET_URL", "").strip()
     env_multi = os.getenv("TARGET_URLS", "").strip()
     urls: list[str] = []
@@ -112,17 +107,15 @@ def run_watcher(
         now_iso = utcnow_iso()
         now_dt = iso_to_dt(now_iso)
 
-        # Per-site collections for grouping
         site_current_counts: dict[str, int] = {}
         site_new: dict[str, list[str]] = {}
         site_restocked: dict[str, list[str]] = {}
 
-        # Track which composite keys are present this tick
         present_keys: set[str] = set()
         url_for_key: dict[str, str] = {}
         name_for_key: dict[str, str] = {}
+        image_for_key: dict[str, str] = {}
 
-        # 1) Fetch each URL
         for url in urls:
             host = domain_of(url)
             label = site_label(url)
@@ -139,25 +132,33 @@ def run_watcher(
                 present_keys.add(key)
                 if it.url:
                     url_for_key[key] = it.url
+                # prefer adapter title; else derive from URL
                 if it.title:
                     name_for_key[key] = it.title
+                elif it.url:
+                    fallback = pretty_name_from_url(it.url)
+                    if fallback:
+                        name_for_key[key] = fallback
+                if it.image:
+                    image_for_key[key] = it.image
             site_current_counts[label] = site_current_counts.get(label, 0) + count
 
-        # 2) Mark absences
         for key, info in state.items():
             if key not in present_keys and info.get("status", 1) == 1:
                 info["status"] = 0
                 info["status_since"] = now_iso
 
-        # 3) Handle present items
         for key in present_keys:
             preferred_url = url_for_key.get(key, state.get(key, {}).get("url", ""))
-            preferred_name = name_for_key.get(key, state.get(key, {}).get("name", None))
+            preferred_name = name_for_key.get(key) or state.get(key, {}).get("name")
+            preferred_img = image_for_key.get(key, state.get(key, {}).get("image", ""))
 
             if key not in state:
-                # inject host into the record too
                 host, _code = key.split(":", 1)
-                state[key] = make_present_record(preferred_url, now_iso, preferred_name, host=host)
+                rec = make_present_record(preferred_url, now_iso, preferred_name, host=host)
+                if preferred_img:
+                    rec["image"] = preferred_img
+                state[key] = rec
                 lab = site_label(host)
                 site_new.setdefault(lab, []).append(key)
             else:
@@ -166,7 +167,9 @@ def run_watcher(
                     info["url"] = preferred_url
                 if preferred_name and preferred_name != info.get("name"):
                     info["name"] = preferred_name
-                info.setdefault("host", key.split(":", 1)[0])  # ensure host exists
+                if preferred_img and not info.get("image"):
+                    info["image"] = preferred_img
+                info.setdefault("host", key.split(":", 1)[0])
                 if info.get("status", 0) == 0:
                     absent_since = iso_to_dt(info.get("status_since", now_iso))
                     if now_dt - absent_since >= restock_delta:
@@ -177,20 +180,15 @@ def run_watcher(
                 else:
                     info["status"] = 1
 
-        # 4) Persist
         save_state(state, state_path)
 
-        # 5) Notify, grouped by site
-        # Flatten into composite keys; renderer will look up name/url from state
         new_codes: list[str] = []
         restocked_codes: list[str] = []
-        # We encode the site label into the code list by just passing composite keys; notify will pretty-print names/links
         for _lab, keys in site_new.items():
             new_codes.extend(keys)
         for _lab, keys in site_restocked.items():
             restocked_codes.extend(keys)
 
-        # Total items across all sites this tick
         total_now = sum(site_current_counts.values())
 
         if new_codes or restocked_codes:
@@ -199,7 +197,7 @@ def run_watcher(
                 restocked_codes=restocked_codes,
                 state=state,
                 restock_hours=restock_hours,
-                target_url="(multiple)",  # not shown in messages
+                target_url="(multiple)",
                 total_count=total_now,
             )
             for n in notifiers:
