@@ -1,7 +1,9 @@
+from typing import Any, Dict
+
 from store_watcher.notify import render_change_digest
 
 
-def _state(url: str, name: str | None = None):
+def _state(url: str, name: str | None = None) -> Dict[str, Any]:
     rec = {
         "url": url,
         "first_seen": "2025-01-01T00:00:00Z",
@@ -13,7 +15,7 @@ def _state(url: str, name: str | None = None):
     return rec
 
 
-def test_render_change_digest_basic():
+def test_render_change_digest_basic() -> None:
     state = {
         "disneystore.com:438039197642": _state(
             "https://www.disneystore.com/animal-pin-the-muppets-438039197642.html",

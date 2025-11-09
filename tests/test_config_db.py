@@ -11,7 +11,7 @@ from store_watcher.db.config import (
 )
 
 
-def test_listeners_crud_scoped_to_user(tmp_path: Path):
+def test_listeners_crud_scoped_to_user(tmp_path: Path) -> None:
     dbp = tmp_path / "state.db"
     ensure_listener_schema(dbp)
 

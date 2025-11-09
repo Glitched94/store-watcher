@@ -1,13 +1,13 @@
 services:
   ui:
-    build: .
-    image: store-watcher:latest
+    image: ghcr.io/glitched94/store-watcher:latest
     container_name: store-watcher-ui
     command: >
       uvicorn store_watcher.ui:create_app
       --factory --host 0.0.0.0 --port 8000
     environment:
       STATE_DB: /app/data/state.db
+      # add GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in prod
     volumes:
       - data:/app/data
     ports:
@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
 
   watcher_us:
-    image: store-watcher:latest
+    image: ghcr.io/glitched94/store-watcher:latest
     container_name: store-watcher-us
     command: store-watcher watch
     env_file:
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   watcher_eu:
-    image: store-watcher:latest
+    image: ghcr.io/glitched94/store-watcher:latest
     container_name: store-watcher-eu
     command: store-watcher watch
     env_file:
@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 
   watcher_uk:
-    image: store-watcher:latest
+    image: ghcr.io/glitched94/store-watcher:latest
     container_name: store-watcher-uk
     command: store-watcher watch
     env_file:
@@ -51,7 +51,7 @@ services:
     restart: unless-stopped
 
   watcher_asia:
-    image: store-watcher:latest
+    image: ghcr.io/glitched94/store-watcher:latest
     container_name: store-watcher-asia
     command: store-watcher watch
     env_file:
@@ -63,7 +63,7 @@ services:
     restart: unless-stopped
 
   watcher_au:
-    image: store-watcher:latest
+    image: ghcr.io/glitched94/store-watcher:latest
     container_name: store-watcher-au
     command: store-watcher watch
     env_file:

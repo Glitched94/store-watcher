@@ -23,7 +23,7 @@ def _state_record(url: str, *, name: str | None = None, image: str | None = None
     return rec
 
 
-def test_items_roundtrip_via_state_dict(tmp_path: Path):
+def test_items_roundtrip_via_state_dict(tmp_path: Path) -> None:
     dbp = tmp_path / "state.db"
     ensure_item_schema(dbp)
 

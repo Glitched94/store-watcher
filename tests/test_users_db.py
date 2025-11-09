@@ -3,7 +3,7 @@ from pathlib import Path
 from store_watcher.db.users import ensure_user_schema, get_user_by_id, upsert_user_google
 
 
-def test_users_upsert_and_get(tmp_path: Path):
+def test_users_upsert_and_get(tmp_path: Path) -> None:
     dbp = tmp_path / "state.db"
     ensure_user_schema(dbp)
 
