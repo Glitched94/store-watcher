@@ -57,7 +57,7 @@ ignore = []
 [tool.ruff.lint.per-file-ignores]
 "src/store_watcher/ui.py" = ["E501"]       # long Tailwind/HTML strings
 "src/store_watcher/notify.py" = ["E501"]   # long HTML fragments
-"tests/*" = ["E501"]                       # long sample strings in fixtures
+"tests/*" = ["E501","E741"]                # long sample strings in fixtures
 
 
 [tool.black]

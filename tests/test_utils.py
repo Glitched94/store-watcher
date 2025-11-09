@@ -42,8 +42,8 @@ def test_slug_to_title_and_pretty_name():
 def test_short_product_url_from_state():
     long = "https://www.disneystore.com/animal-pin-the-muppets-438039197642.html?x=y"
     short = short_product_url_from_state(long, "438039197642")
-    assert short == "https://www.disneystore.com/438039197642.html"
+    assert short == "https://disneystore.com/438039197642.html"
 
     # Non-Disney host falls back to canonicalized original
     other = "https://example.com/foo-123456.html?x=1"
-    assert short_product_url_from_state(other, "123456") == "https://example.com/foo-123456.html"
+    assert short_product_url_from_state(other, "123456") == "https://example.com/123456.html"

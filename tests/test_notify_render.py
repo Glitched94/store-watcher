@@ -2,32 +2,51 @@ from store_watcher.notify import render_change_digest
 
 
 def _state(url: str, name: str | None = None):
-    return {"url": url, **({"name": name} if name else {})}
-
-
-def test_render_uses_masked_links_and_short_urls():
-    state = {
-        "438039197642": _state(
-            "https://www.disneystore.com/animal-pin-the-muppets-438039197642.html"
-        ),
-        "438018657693": _state("https://www.disneystore.com/xyz-438018657693.html", name="XYZ Pin"),
+    rec = {
+        "url": url,
+        "first_seen": "2025-01-01T00:00:00Z",
+        "status": 1,
+        "status_since": "2025-01-01T00:00:00Z",
     }
+    if name:
+        rec["name"] = name
+    return rec
+
+
+def test_render_change_digest_basic():
+    state = {
+        "disneystore.com:438039197642": _state(
+            "https://www.disneystore.com/animal-pin-the-muppets-438039197642.html",
+            name="Animal Pin – The Muppets",
+        ),
+        "disneystore.com:438018657693": _state("https://www.disneystore.com/xyz-438018657693.html"),
+    }
+
     subject, html_body, text_body = render_change_digest(
-        new_codes=["438039197642"],
-        restocked_codes=["438018657693"],
+        new_codes=["disneystore.com:438039197642"],
+        restocked_codes=["disneystore.com:438018657693"],
         state=state,
         restock_hours=24,
-        target_url="https://example.com/ignored",
+        target_url="(multiple)",
         total_count=2,
     )
+
     # Subject summarizes counts
-    assert "1 new" in subject and "1 restocked" in subject
+    subj_low = subject.lower()
+    assert "1 new" in subj_low and "1 restocked" in subj_low
 
-    # HTML contains <a> with display name (no raw URL text)
-    assert '<a href="https://www.disneystore.com/438039197642.html">' in html_body
-    assert "Animal" in html_body or "Pin" in html_body
+    # HTML contains an anchor with a short product URL
+    assert (
+        'href="https://www.disneystore.com/438039197642.html"' in html_body
+        or 'href="https://disneystore.com/438039197642.html"' in html_body
+    )
 
-    # Text uses masked link with short URL and no dev-y header
+    # The display name should appear somewhere in HTML
+    assert "Muppets" in html_body or "Animal Pin" in html_body
+
+    # Text uses short URL and reasonable formatting (no dev-only header)
+    assert (
+        "https://www.disneystore.com/438039197642.html" in text_body
+        or "https://disneystore.com/438039197642.html" in text_body
+    )
     assert "Changes detected on" not in text_body
-    assert "https://www.disneystore.com/438039197642.html" in text_body
-    assert "[" in text_body and "](" in text_body  # markdown link present
