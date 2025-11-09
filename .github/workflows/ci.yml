@@ -28,10 +28,10 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
 
-      - name: Install (dev)
+      - name: Install (all)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[all]"
 
       - name: Ruff (lint)
         run: ruff check .
