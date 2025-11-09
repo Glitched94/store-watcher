@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-import os
+import json
 from pathlib import Path
 
 import typer
 import uvicorn
+from dotenv import load_dotenv
 
 from store_watcher.ui import create_app
 
 from .core import run_watcher
-from .state import load_state as load_any
-from .state import save_state as save_any
+
+# NEW: use the db layer directly
+from .db.items import load_items_dict, save_items
 
 app = typer.Typer(help="Watch store pages and alert on new/restocked items.")
 
@@ -41,61 +43,67 @@ def watch(
 
 @app.command("state")
 def state_cmd(
-    path: str = typer.Option("seen_items.json", help="Path to state JSON"),
+    sqlite_path: str = typer.Option("state.db", help="Path to SQLite DB (STATE_DB)"),
     action: str = typer.Argument("show", help="show | clear"),
 ) -> None:
     """
-    Inspect or clear the local state file.
+    Inspect or clear items stored in SQLite.
     """
-    p = Path(path)
+    # Ensure db path exists (read) / use for clear
+    dbp = Path(sqlite_path)
+
     if action == "show":
-        state = load_any(p)
-        typer.echo(f"Items: {len(state)}")
-        for code, info in list(state.items())[:20]:
+        # Temporarily point the loader to this db path
+        # The db.items helpers read the path directly, so we pass it through save/load functions
+        # Here we just want to load and count:
+        items = load_items_dict(dbp)
+        typer.echo(f"Items: {len(items)}")
+        for key, info in list(items.items())[:20]:
             status = info.get("status")
             since = info.get("status_since")
             url = info.get("url")
-            typer.echo(f"- {code}: status={status} since={since}")
+            typer.echo(f"- {key}: status={status} since={since}")
             if url:
                 typer.echo(f"    url={url}")
-        if len(state) > 20:
-            typer.echo(f"... ({len(state)-20} more)")
+        if len(items) > 20:
+            typer.echo(f"... ({len(items)-20} more)")
     elif action == "clear":
-        if p.exists():
-            p.unlink()
-            typer.echo("State cleared.")
+        if dbp.exists():
+            dbp.unlink()
+            typer.echo("SQLite DB removed.")
         else:
-            typer.echo("No state file found.")
+            typer.echo("No SQLite DB found.")
     else:
         raise typer.BadParameter("action must be 'show' or 'clear'")
 
 
 @app.command("migrate")
 def migrate_json_to_sqlite(
-    json_path: str = typer.Option("seen_items.json", help="Path to legacy JSON state"),
+    json_path: str = typer.Option("seen_items.json", help="Path to legacy JSON items"),
     sqlite_path: str = typer.Option("state.db", help="Destination SQLite file"),
 ) -> None:
     """
-    Migrate a JSON state file into SQLite. This respects your existing migrations
-    (legacy list/dict -> status machine) during load.
+    Migrate a JSON items dict directly into SQLite.
+    Expects the JSON to already be a mapping of:
+      { key: { url, first_seen, status, status_since, [name], [host], [image] } }
     """
-    os.environ["STATE_DB"] = sqlite_path  # force save to SQLite
-    state = {}
     jp = Path(json_path)
-    if jp.exists():
-        # temporarily force JSON load by unsetting STATE_DB for the read
-        prev = os.environ.pop("STATE_DB", None)
-        try:
-            state = load_any(jp)
-        finally:
-            if prev is not None:
-                os.environ["STATE_DB"] = prev
-    else:
+    if not jp.exists():
         typer.echo(f"JSON not found: {json_path}")
         raise typer.Exit(code=1)
 
-    save_any(state)  # goes to SQLite because STATE_DB is set
-    typer.echo(f"Migrated {len(state)} records -> {sqlite_path}")
+    try:
+        data = json.loads(jp.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            typer.echo("JSON must be an object mapping keys to item records.")
+            raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Failed to read JSON: {e}")
+        raise typer.Exit(code=1)
+
+    dbp = Path(sqlite_path)
+    save_items(data, dbp)
+    typer.echo(f"Migrated {len(data)} records -> {sqlite_path}")
 
 
 @app.command("ui")
@@ -105,6 +113,7 @@ def ui(
     env: str | None = typer.Option(None, "--env", help="Path to a .env file to load for the UI"),
     reload: bool = typer.Option(False, help="Auto-reload on code changes (dev)"),
 ) -> None:
+    load_dotenv(dotenv_path=env)
     app = create_app(dotenv_path=env)
     uvicorn.run(app, host=host, port=port, reload=reload)
 

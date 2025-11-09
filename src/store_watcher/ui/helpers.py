@@ -6,16 +6,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, TypedDict
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from starlette.requests import Request
 
-from ..state_sqlite import load_state as load_state_sqlite
+from ..db.items import load_items_dict
 
 
 class SessionUser(TypedDict, total=False):
-    sub: Optional[str]
+    id: int
     email: str
-    name: Optional[str]
+    name: str
     picture: Optional[str]
 
 
@@ -35,7 +35,6 @@ def _h_since(iso: Optional[str]) -> Optional[float]:
 
 
 def _safe_env(name: str, default: str = "") -> str:
-    # Never leak secrets in cleartext
     value = os.getenv(name, default)
     if not value:
         return default
@@ -46,23 +45,23 @@ def _safe_env(name: str, default: str = "") -> str:
 
 def _require_user(request: Request) -> SessionUser:
     user = request.session.get("user")
-    if not user:
-        raise HTTPException(status_code=307, headers={"Location": "/login"})
+    if not user or "id" not in user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     return user
 
 
 def _load_state_any() -> Dict[str, Dict[str, Any]]:
+    """
+    UI needs a dict-like shape of items. Prefer SQLite; fall back to JSON if present.
+    """
     db = os.getenv("STATE_DB")
     if db:
-        return load_state_sqlite(Path(db))
+        return load_items_dict(Path(db))
     f = Path(os.getenv("STATE_FILE", "seen_items.json"))
     return json.loads(f.read_text()) if f.exists() else {}
 
 
 def _state_version() -> str:
-    """
-    For cache-busting, use mtime of the chosen backend file (DB or JSON).
-    """
     _backend, path = _state_sources()
     try:
         return str(int(path.stat().st_mtime))
@@ -71,9 +70,6 @@ def _state_version() -> str:
 
 
 def _state_sources() -> Tuple[str, Path]:
-    """
-    Returns ("sqlite", db_path) if STATE_DB is set, else ("json", json_path).
-    """
     db = os.getenv("STATE_DB", "").strip()
     if db:
         return "sqlite", Path(db)
@@ -82,7 +78,6 @@ def _state_sources() -> Tuple[str, Path]:
 
 
 def _to_ord(iso: Optional[str]) -> int:
-    """Turn an ISO-ish timestamp into a sortable integer; 0 on failure."""
     if not iso:
         return 0
     s = iso.replace("Z", "+00:00")

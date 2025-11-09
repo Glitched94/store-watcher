@@ -13,18 +13,14 @@ from dotenv import load_dotenv
 
 from .adapters.base import Adapter, Item
 from .adapters.sfcc import SFCCGridAdapter
-from .config_sqlite import ensure_listener_schema
+from .db.config import ensure_listener_schema
+from .db.items import load_items_dict, save_items
 from .notify import (
     Notifier,
     build_notifiers_from_db,
     build_notifiers_from_env,
     render_change_digest,
 )
-from .state import load_state as load_state_json
-from .state import make_present_record, migrate_keys_to_composite
-from .state import save_state as save_state_json
-from .state_sqlite import load_state as load_state_sqlite
-from .state_sqlite import save_state as save_state_sqlite
 from .utils import (
     domain_of,
     iso_to_dt,
@@ -83,27 +79,20 @@ def run_watcher(
     if not urls:
         raise SystemExit("Set TARGET_URL or TARGET_URLS in .env, or pass --url/--urls")
 
-    default_host = domain_of(urls[0])
-
     include_rx = _compile(include_re or os.getenv("INCLUDE_RE", "").strip() or None)
     exclude_rx = _compile(exclude_re or os.getenv("EXCLUDE_RE", "").strip() or None)
     restock_delta = timedelta(hours=restock_hours)
 
     state_db = os.getenv("STATE_DB", "").strip()
-    state_path = Path(os.getenv("STATE_FILE", "seen_items.json"))
+    if not state_db:
+        raise SystemExit("STATE_DB must be set (SQLite is now the only supported backend).")
 
     watcher_label = site_label(urls[0])
 
     # ---------- notifier configuration ----------
-    notifiers: list[Notifier]
-    if state_db:
-        ensure_listener_schema(Path(state_db))
-        notifiers = build_notifiers_from_db(state_db, watcher_label)
-    else:
-        notifiers = []
-
-    if not notifiers:
-        notifiers = build_notifiers_from_env()
+    notifiers: list[Notifier] = []
+    ensure_listener_schema(Path(state_db))
+    notifiers = build_notifiers_from_db(state_db, watcher_label) or build_notifiers_from_env() or []
     if not notifiers:
         print("[warn] No notifiers configured (set SMTP_* or DISCORD_WEBHOOK_URL). Will log only.")
 
@@ -115,22 +104,26 @@ def run_watcher(
     if exclude_rx:
         print(f"[info] Exclude: {exclude_rx.pattern}")
     print(f"[info] Restock window: {restock_hours}h")
+    print(f"[info] State backend: sqlite ({state_db})")
 
-    if state_db:
-        print(f"[info] State backend: sqlite ({state_db})")
-        state = load_state_sqlite(Path(state_db))
-        state = migrate_keys_to_composite(state, default_host)
-        save_state_sqlite(state, Path(state_db))
-    else:
-        print(f"[info] State backend: json ({state_path})")
-        state = load_state_json(state_path)
-        state = migrate_keys_to_composite(state, default_host)
-        save_state_json(state, state_path)
-
+    # Load current items dict (key → record)
+    state = load_items_dict(Path(state_db))
     print(f"[info] Known items: {len(state)}")
 
     session = make_session()
     managed_hosts: set[str] = {domain_of(u) for u in urls}
+
+    def _make_present_record(url: str, now_iso: str, name: str | None, host: str) -> dict:
+        rec: dict = {
+            "url": url,
+            "first_seen": now_iso,
+            "status": 1,
+            "status_since": now_iso,
+            "host": host,
+        }
+        if name:
+            rec["name"] = name
+        return rec
 
     # ---------- inner loop ----------
     def tick() -> None:
@@ -190,7 +183,7 @@ def run_watcher(
 
             if key not in state:
                 host, _code = key.split(":", 1)
-                rec = make_present_record(preferred_url, now_iso, preferred_name, host=host)
+                rec = _make_present_record(preferred_url, now_iso, preferred_name, host=host)
                 if preferred_img:
                     rec["image"] = preferred_img
                 state[key] = rec
@@ -216,10 +209,7 @@ def run_watcher(
                     info["status"] = 1
 
         # persist
-        if state_db:
-            save_state_sqlite(state, Path(state_db))
-        else:
-            save_state_json(state, state_path)
+        save_items(state, Path(state_db))
 
         # notify
         new_codes: list[str] = []

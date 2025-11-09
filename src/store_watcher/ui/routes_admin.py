@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, cast
 from fastapi import APIRouter, Depends, Form, Query
 from fastapi.responses import HTMLResponse
 
-from ..config_sqlite import (
+from ..db.config import (
     Listener,
     add_listener,
     delete_listener,
@@ -21,8 +21,10 @@ UserDep = Annotated[SessionUser, Depends(_require_user)]
 
 @router.get("/listeners", response_class=HTMLResponse)
 async def admin_listeners(user: UserDep) -> HTMLResponse:
-    ensure_listener_schema(Path(os.getenv("STATE_DB", "/app/data/state.db")))
-    listeners = list_listeners(Path(os.getenv("STATE_DB", "/app/data/state.db")), region=None)
+    dbp = Path(os.getenv("STATE_DB", "/app/data/state.db"))
+    ensure_listener_schema(dbp)
+    listeners = list_listeners(dbp, region=None, user_id=user["id"])
+
     rows: list[str] = []
 
     for listener in listeners:
@@ -163,7 +165,6 @@ async def admin_listeners_add(
     if k not in ("discord", "email"):
         return HTMLResponse("<div class='text-rose-400'>Unknown kind.</div>", status_code=400)
 
-    # Tell mypy that `k` is exactly one of the two literals
     kind_lit = cast(Literal["discord", "email"], k)
 
     cfg: dict[str, Any]
@@ -198,13 +199,13 @@ async def admin_listeners_add(
         Listener(
             id=None,
             region=region.upper(),
-            kind=kind_lit,  # <- now a Literal
+            kind=kind_lit,
             enabled=True,
             name=name or f"{kind_lit}@{region}",
             config=cfg,
+            user_id=user["id"],
         ),
     )
-    # re-render list
     return await admin_listeners(user)
 
 
@@ -212,12 +213,11 @@ async def admin_listeners_add(
 async def admin_listeners_toggle(user: UserDep, id: int = Query(...)) -> HTMLResponse:
     dbp = Path(os.getenv("STATE_DB", "/app/data/state.db"))
     ensure_listener_schema(dbp)
-    # read current state
-    ls = list_listeners(dbp)
+    ls = list_listeners(dbp, user_id=user["id"])
     m = next((x for x in ls if x.id == id), None)
     if not m:
         return HTMLResponse("<span class='text-rose-400'>Not found</span>", status_code=404)
-    set_listener_enabled(dbp, id, not m.enabled)
+    set_listener_enabled(dbp, id, not m.enabled, user_id=user["id"])
     return HTMLResponse(
         f"""<button hx-post="/admin/listeners/toggle?id={id}" hx-swap="outerHTML"
         class="px-2 py-0.5 rounded text-xs {'bg-emerald-600' if not m.enabled else 'bg-slate-700'}">
@@ -229,5 +229,5 @@ async def admin_listeners_toggle(user: UserDep, id: int = Query(...)) -> HTMLRes
 async def admin_listeners_delete(user: UserDep, id: int = Query(...)) -> HTMLResponse:
     dbp = Path(os.getenv("STATE_DB", "/app/data/state.db"))
     ensure_listener_schema(dbp)
-    delete_listener(dbp, id)
+    delete_listener(dbp, id, user_id=user["id"])
     return HTMLResponse("")  # HTMX will remove the row

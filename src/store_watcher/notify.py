@@ -10,7 +10,7 @@ from typing import Any
 
 import requests
 
-from .config_sqlite import list_listeners
+from .db.config import list_listeners
 from .utils import pretty_name_from_url, short_product_url_from_state, site_label
 
 # ---------- Notifier base ----------
