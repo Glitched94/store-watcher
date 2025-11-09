@@ -5,10 +5,12 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Any
 
 import requests
 
+from .config_sqlite import list_listeners
 from .utils import pretty_name_from_url, short_product_url_from_state, site_label
 
 # ---------- Notifier base ----------
@@ -268,4 +270,46 @@ def build_notifiers_from_env() -> list[Notifier]:
     if discord_url:
         notifiers.append(DiscordWebhookNotifier(discord_url, discord_name, discord_avatar))
 
+    return notifiers
+
+
+# ---------- Factory from db ----------
+
+
+def build_notifiers_from_db(state_db_path: str, region: str) -> list[Notifier]:
+    """Load enabled listeners for this region (plus ALL)."""
+    notifiers: list[Notifier] = []
+    for listener in list_listeners(Path(state_db_path), region=region):
+        if not listener.enabled:
+            continue
+
+        if listener.kind == "discord":
+            cfg = listener.config
+            url = (cfg.get("webhook_url") or "").strip()
+            if url:
+                notifiers.append(
+                    DiscordWebhookNotifier(
+                        url,
+                        cfg.get("username") or None,
+                        cfg.get("avatar_url") or None,
+                    )
+                )
+
+        elif listener.kind == "email":
+            cfg = listener.config
+            host = (cfg.get("smtp_host") or "").strip()
+            user = (cfg.get("smtp_user") or "").strip()
+            pw = (cfg.get("smtp_pass") or "").strip()
+            to = (cfg.get("to") or "").strip()
+            if host and user and pw and to:
+                notifiers.append(
+                    EmailNotifier(
+                        host,
+                        int(cfg.get("smtp_port") or 587),
+                        user,
+                        pw,
+                        (cfg.get("from") or user),
+                        to,
+                    )
+                )
     return notifiers

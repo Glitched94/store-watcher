@@ -152,6 +152,7 @@ activemq-data/
 .env.asia
 .env.au
 .env.eu
+.env.uk
 .env.us
 .envrc
 .venv

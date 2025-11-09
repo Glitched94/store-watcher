@@ -64,8 +64,6 @@ def site_label(s: str) -> str:
         return "ASIA"
     if h.endswith(".com.au") or h.endswith("disneystore.com.au"):
         return "AU"
-    if h.endswith(".co.jp") or h.endswith("disney.co.jp"):
-        return "JP"
     return "US"
 
 

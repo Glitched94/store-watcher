@@ -13,8 +13,18 @@ from dotenv import load_dotenv
 
 from .adapters.base import Adapter, Item
 from .adapters.sfcc import SFCCGridAdapter
-from .notify import Notifier, build_notifiers_from_env, render_change_digest
-from .state import load_state, make_present_record, migrate_keys_to_composite, save_state
+from .config_sqlite import ensure_listener_schema
+from .notify import (
+    Notifier,
+    build_notifiers_from_db,
+    build_notifiers_from_env,
+    render_change_digest,
+)
+from .state import load_state as load_state_json
+from .state import make_present_record, migrate_keys_to_composite
+from .state import save_state as save_state_json
+from .state_sqlite import load_state as load_state_sqlite
+from .state_sqlite import save_state as save_state_sqlite
 from .utils import (
     domain_of,
     iso_to_dt,
@@ -82,7 +92,18 @@ def run_watcher(
     state_db = os.getenv("STATE_DB", "").strip()
     state_path = Path(os.getenv("STATE_FILE", "seen_items.json"))
 
-    notifiers: list[Notifier] = build_notifiers_from_env()
+    watcher_label = site_label(urls[0])
+
+    # ---------- notifier configuration ----------
+    notifiers: list[Notifier]
+    if state_db:
+        ensure_listener_schema(Path(state_db))
+        notifiers = build_notifiers_from_db(state_db, watcher_label)
+    else:
+        notifiers = []
+
+    if not notifiers:
+        notifiers = build_notifiers_from_env()
     if not notifiers:
         print("[warn] No notifiers configured (set SMTP_* or DISCORD_WEBHOOK_URL). Will log only.")
 
@@ -97,21 +118,21 @@ def run_watcher(
 
     if state_db:
         print(f"[info] State backend: sqlite ({state_db})")
+        state = load_state_sqlite(Path(state_db))
+        state = migrate_keys_to_composite(state, default_host)
+        save_state_sqlite(state, Path(state_db))
     else:
         print(f"[info] State backend: json ({state_path})")
+        state = load_state_json(state_path)
+        state = migrate_keys_to_composite(state, default_host)
+        save_state_json(state, state_path)
 
-    print(f"[info] Notifiers: {', '.join(type(n).__name__ for n in notifiers) or 'none'}")
-
-    state = load_state(state_path)
-    state = migrate_keys_to_composite(state, default_host)
-    save_state(state, state_path)
     print(f"[info] Known items: {len(state)}")
 
     session = make_session()
-
-    # Hosts this watcher manages
     managed_hosts: set[str] = {domain_of(u) for u in urls}
 
+    # ---------- inner loop ----------
     def tick() -> None:
         nonlocal state
         now_iso = utcnow_iso()
@@ -151,9 +172,8 @@ def run_watcher(
                 if it.image:
                     image_for_key[key] = it.image
             site_current_counts[label] = site_current_counts.get(label, 0) + count
-            print(f"[debug] fetched {count:>3} items from {label} :: {url}")
 
-        # 2) Mark absences (only for hosts this watcher manages)
+        # mark absences
         for key, info in state.items():
             key_host = key.split(":", 1)[0]
             if key_host not in managed_hosts:
@@ -162,7 +182,7 @@ def run_watcher(
                 info["status"] = 0
                 info["status_since"] = now_iso
 
-        # 3) Handle present items
+        # handle present items
         for key in present_keys:
             preferred_url = url_for_key.get(key, state.get(key, {}).get("url", ""))
             preferred_name = name_for_key.get(key) or state.get(key, {}).get("name")
@@ -195,17 +215,19 @@ def run_watcher(
                 else:
                     info["status"] = 1
 
-        # 4) Persist
-        save_state(state, state_path)
+        # persist
+        if state_db:
+            save_state_sqlite(state, Path(state_db))
+        else:
+            save_state_json(state, state_path)
 
-        # 5) Notify, grouped by site
+        # notify
         new_codes: list[str] = []
         restocked_codes: list[str] = []
         for _lab, keys in site_new.items():
             new_codes.extend(keys)
         for _lab, keys in site_restocked.items():
             restocked_codes.extend(keys)
-
         total_now = sum(site_current_counts.values())
 
         if new_codes or restocked_codes:

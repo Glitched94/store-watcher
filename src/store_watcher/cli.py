@@ -6,10 +6,11 @@ from pathlib import Path
 import typer
 import uvicorn
 
+from store_watcher.ui import create_app
+
 from .core import run_watcher
 from .state import load_state as load_any
 from .state import save_state as save_any
-from .ui import create_app
 
 app = typer.Typer(help="Watch store pages and alert on new/restocked items.")
 
