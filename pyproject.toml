@@ -84,6 +84,18 @@ disallow_untyped_defs = false
 check_untyped_defs = false
 ignore_missing_imports = true
 
+# Ignore missing third-party stubs for UI deps in type-checking
+[[tool.mypy.overrides]]
+module = [
+  "authlib.*",
+  "uvicorn.*",
+  "fastapi",
+  "fastapi.*",
+  "starlette.*",
+  "httpx.*",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
