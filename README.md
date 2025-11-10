@@ -1,257 +1,218 @@
-# Store Watcher
+# 🧭 Store Watcher
 
-Watch online store pages and get alerts for **new** and **restocked** products.
+**Store Watcher** monitors retail pages for **new** and **restocked** products, alerting you via **Discord** or **Email**.
+It provides a web dashboard built with FastAPI + HTMX, Google login, and a persistent SQLite backend — all running through Docker.
 
-- Robust identity via **product codes** (e.g., `438039197642`)
-- Compact **state machine** tracks presence/absence over time
-- Alerts via **Email** and **Discord** (chunked, cleanly formatted messages)
-- Extensible **adapter** system (Disney Store included)
-- CLI for running, debugging, and scheduling
-- Fully tested and CI-verified with GitHub Actions
-
-> A production-minded Python demo: adapters, state machines, CLI, notifications, testing, and CI.
+> Watch your favorite store pages — never miss a restock again.
 
 ---
 
-## ✨ Features
+## 🚀 Highlights
 
-- **New item alerts** — first time an item appears.
-- **Restock alerts** — re-added after `RESTOCK_WINDOW_HOURS` of absence.
-- **Pretty notifications**  
-  - Email: bold item names as links.  
-  - Discord: Markdown links `[Name](short-url)` with embeds suppressed and auto-chunking for long lists.
-- **Polite fetching** — headers, intervals, and retries configurable.
-- **Portable state** — human-readable JSON with automatic migrations.
-- **Tested** — utilities, adapter parsing, state logic, and rendering covered by pytest.
+* 🧩 **Full-stack app** — FastAPI web UI with Google OAuth login
+* 💾 **SQLite-backed** persistence for users, items, and listeners
+* 🔔 **Smart notifications** — detects new + restocked products via product codes
+* 💬 **Discord & Email alerts** — chunked, clean, and configurable
+* 🐳 **Docker-native architecture** — separate UI and watcher containers
+* 🧠 **CI/CD verified** — linting, typing, and tests in GitHub Actions
 
 ---
 
-## 🚀 Quickstart
-
-```bash
-# 1. Install
-pipx install .
-
-# Or for development
-pip install -e ".[dev]"
-
-# 2. Create your .env
-cp .env.example .env
-
-# 3. Run (defaults: 5 min interval, 24 h restock window)
-store-watcher watch
-````
-
-### `.env` example
-
-```ini
-# Disney Store pins grid (server-rendered HTML)
-TARGET_URL=https://www.disneystore.com/on/demandware.store/Sites-shopDisney-Site/default/Search-UpdateGrid?cgid=collectibles-pins&start=0&sz=200
-
-# Optional regex filters (Python regex)
-INCLUDE_RE=
-EXCLUDE_RE=(t-shirt|jersey|cap|hoodie|sweatshirt)\b
-
-# Loop cadence & restock window
-CHECK_EVERY=300
-RESTOCK_WINDOW_HOURS=24
-
-# Email (SMTP)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password
-EMAIL_FROM=your_email@gmail.com
-EMAIL_TO=you@yourdomain.com
-
-# Discord Webhook (optional)
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy
-DISCORD_USERNAME=Store Watcher
-DISCORD_AVATAR_URL=
-```
-
----
-
-## 🧰 CLI
-
-```bash
-# Run watcher (defaults from .env)
-store-watcher watch
-
-# Override on the fly
-store-watcher watch --every 600 --restock 48
-
-# Single pass (no loop / no email)
-store-watcher watch --once
-
-# View or clear stored state
-store-watcher state show
-store-watcher state clear
-```
-
-> 💡 Tip: On Windows, use `pythonw.exe` or Task Scheduler; on Linux, use `systemd` for background operation.
-
----
-
-## ⚙️ How it Works
-
-Each product is keyed by its numeric code:
-
-```json
-{
-  "438039197642": {
-    "url": "https://disneystore.com/438039197642.html",
-    "name": "Animal Pin – The Muppets",
-    "first_seen": "2025-10-29T03:05:00Z",
-    "status": 1,
-    "status_since": "2025-10-29T03:05:00Z"
-  }
-}
-```
-
-| Field          | Meaning                                                                        |
-| -------------- | ------------------------------------------------------------------------------ |
-| `status`       | `1` = present, `0` = absent                                                    |
-| `status_since` | when the current status began                                                  |
-| **Restock**    | triggers only on an *absent → present* transition after `RESTOCK_WINDOW_HOURS` |
-
----
-
-## 🪄 Notifications
-
-### Email
-
-* Simple HTML list of new/restocked products
-* Each item name is a clickable link
-* Sent through your SMTP configuration
-
-### Discord
-
-* Clean Markdown messages with `[Name](short-url)` format
-* Embeds suppressed (no bulky previews)
-* Automatic message chunking if over Discord’s 2000-character limit
-
-Example:
-
-```
-New items (3):
-- [Ariel and Sebastian Pin – The Little Mermaid](https://www.disneystore.com/438039196577.html)
-- [Disneyland 70th Anniversary Vault Collection Pin Display Frame](https://www.disneystore.com/438018657693.html)
-- [Mickey Mouse Holiday Pin](https://www.disneystore.com/438039190384.html)
-
-Total items now: 23
-```
-
----
-
-## 🕒 Scheduling
-
-### Windows Task Scheduler
-
-```powershell
-$task   = "StoreWatcher"
-$py     = "C:\Python312\pythonw.exe"
-$script = "C:\Users\<you>\AppData\Local\Programs\Python\Python312\Scripts\store-watcher.exe"
-$cwd    = "C:\path\to\repo"
-
-schtasks /Create /TN $task /SC ONLOGON `
-  /TR "cmd /c cd /d `"$cwd`" && `"$script`" watch" `
-  /RL LIMITED /F
-```
-
-### Linux systemd
-
-```ini
-# /etc/systemd/system/store-watcher.service
-[Unit]
-Description=Store Watcher
-
-[Service]
-WorkingDirectory=/opt/store-watcher
-ExecStart=/usr/local/bin/store-watcher watch
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
----
-
-## 🧱 Project Structure
+## 🧩 Architecture Overview
 
 ```
 store-watcher/
 ├─ src/store_watcher/
-│  ├─ cli.py           # Typer CLI commands
-│  ├─ core.py          # loop + state machine
-│  ├─ notify.py        # Email & Discord notifiers
-│  ├─ adapters/
-│  │  ├─ base.py       # Adapter ABC + Item type
-│  │  └─ disneystore.py
-│  ├─ utils.py         # canonicalization, code extraction, short URLs
-│  └─ state.py         # JSON store + migrations
-├─ tests/              # pytest unit tests
-├─ .pre-commit-config.yaml
-├─ pyproject.toml
-├─ README.md
+│  ├─ ui/                  # FastAPI + HTMX web UI
+│  │  ├─ routes_main.py    # Dashboard & landing
+│  │  ├─ routes_auth.py    # Google login/logout
+│  │  ├─ routes_admin.py   # Manage listeners & tests
+│  │  └─ core.py           # App factory
+│  ├─ db/                  # SQLite-backed persistence
+│  ├─ adapters/            # Site scrapers/adapters (e.g., Disney Store)
+│  ├─ notify/              # Email & Discord notifiers
+│  ├─ core.py              # Watcher logic and state tracking
+│  ├─ cli.py               # Typer CLI
+│  └─ utils.py             # URL parsing, regex helpers, etc.
+├─ tests/                  # pytest suite
+├─ Dockerfile              # Base image build
+├─ docker-compose.yml      # Multi-region setup
 └─ .github/workflows/ci.yml
 ```
+
+---
+
+## 🖥️ Web UI
+
+* FastAPI + HTMX dashboard
+* Google authentication
+* Manage **listeners** (Discord or Email)
+* Send **test notifications**
+* View all listeners by region and user
+
+### Run locally
+
+```bash
+uvicorn store_watcher.ui:create_app --factory --host 0.0.0.0 --port 8000
+```
+
+---
+
+## ⚙️ Watcher Services
+
+Each watcher runs independently and monitors a single `TARGET_URL`.
+
+### Example `.env.us`
+
+```ini
+# Target page to monitor
+TARGET_URL=https://www.disneystore.com/on/demandware.store/Sites-shopDisney-Site/default/Search-UpdateGrid?cgid=collectibles-pins&start=0&sz=200
+
+# Polling + restock behavior
+CHECK_EVERY=300
+RESTOCK_WINDOW_HOURS=24
+INCLUDE_RE=
+EXCLUDE_RE=(t-shirt|hoodie|jersey|cap)\b
+
+# Email delivery (used by Email listeners)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+EMAIL_FROM=alerts@yourdomain.com
+```
+
+Each watcher container reads its own `.env.<region>` file — e.g. `.env.us`, `.env.eu`, etc.
+Listeners in the UI database only need to specify **destination info** (Discord webhook or Email To address).
+
+---
+
+## 🧰 Docker Deployment
+
+### Example `docker-compose.yml`
+
+```yaml
+services:
+  ui:
+    image: ghcr.io/glitched94/store-watcher:latest
+    container_name: store-watcher-ui
+    command: >
+      uvicorn store_watcher.ui:create_app
+      --factory --host 0.0.0.0 --port 8000
+    env_file:
+      - ./.env.ui
+    volumes:
+      - data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  watcher_us:
+    image: ghcr.io/glitched94/store-watcher:latest
+    container_name: store-watcher-us
+    command: store-watcher watch
+    env_file:
+      - ./.env.us
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+  watcher_eu:
+    image: ghcr.io/glitched94/store-watcher:latest
+    container_name: store-watcher-eu
+    command: store-watcher watch
+    env_file:
+      - ./.env.eu
+    volumes:
+      - data:/app/data
+    restart: unless-stopped
+
+volumes:
+  data:
+```
+
+### Local usage
+
+```bash
+# Build fresh images
+docker compose build --no-cache
+
+# Start all services
+docker compose up -d
+
+# Stop and remove
+docker compose down
+```
+
+---
+
+## 🔔 Notifications
+
+### Discord
+
+* Markdown-formatted `[Name](url)` links
+* Embeds suppressed for clean messages
+* Automatic chunking under 2000 characters
+* Simple “Test” button in the UI
+
+### Email
+
+* Clean HTML + plaintext layout
+* SMTP credentials from `.env.ui`
+* “To” addresses configured per listener
 
 ---
 
 ## 🧪 Development
 
 ```bash
-# Dev install
+# Install dev environment
 pip install -e ".[dev]"
 
-# Lint, format, type-check, test
+# Run linting, typing, and tests
 ruff check .
-ruff format --check .
-mypy src
+black --check .
+mypy
 pytest -q
 ```
 
-### Pre-commit hooks
+Run the UI locally:
 
 ```bash
-pre-commit install
-pre-commit install --hook-type pre-push
-pre-commit run --all-files
+python -m store_watcher.ui
 ```
 
-These run `ruff`, `black`, `mypy`, and `pytest` automatically before you commit or push.
+Run a watcher directly:
+
+```bash
+store-watcher watch --url https://example.com
+```
 
 ---
 
-## 🧰 Continuous Integration
+## ⚙️ Continuous Integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs:
+GitHub Actions automatically runs on every push:
 
-* `ruff`, `black`, `mypy`
-* `pytest` on Python 3.11 + 3.12
-* builds wheel + sdist and uploads as artifact
+* ✅ `ruff`, `black`, `mypy`
+* 🧪 `pytest` on Python 3.11 + 3.12
+* 📦 Builds and checks wheel/sdist
+* 🐳 Builds and pushes multi-arch Docker image to GHCR
 
 ---
 
 ## 🧭 Roadmap
 
-* Retries with backoff (429/5xx)
-* Additional adapters (Shopify, Playwright for JS sites)
-* Optional SQLite backend
-* Price/title change detection
-* Small web dashboard
+* Historical item tracking and analytics
+* Price change notifications
+* Webhook integrations
+* Optional retry/backoff and rate limiting
 
 ---
 
-## 🤝 Ethics
+## 🧑‍💻 Author
 
-Respect each site’s Terms of Service and robots.txt.
-Keep polling intervals reasonable.
-This tool is for personal use and demonstration purposes only.
+**Joshua Dietrich**
+MIT License
 
 ---
-
-## 📄 License
-
-MIT
