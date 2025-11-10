@@ -48,18 +48,36 @@ def _send_test_discord(cfg: dict) -> None:
 
 
 def _send_test_email(cfg: dict[str, Any]) -> None:
-    host = str(cfg.get("smtp_host") or "")
-    port = int(cfg.get("smtp_port") or 587)
-    user = str(cfg.get("smtp_user") or "")
-    pwd = str(cfg.get("smtp_pass") or "")
-    sender = str(cfg.get("from") or user)
-    to = str(cfg.get("to") or "")
-    if not (host and port and user and pwd and to):
-        raise ValueError("SMTP host/user/pass and To are required")
+    """
+    Send a test email using server env (SMTP_* and EMAIL_FROM).
+    Listener config only needs {"to": "..."}.
+    """
+    to = str(cfg.get("to") or "").strip()
+    if not to:
+        raise ValueError("Listener config must include 'to' email address")
+
+    host = (os.getenv("SMTP_HOST") or "").strip()
+    port_str = (os.getenv("SMTP_PORT") or "587").strip()
+    user = (os.getenv("SMTP_USER") or "").strip()
+    pwd = (os.getenv("SMTP_PASS") or "").strip()
+    sender = (os.getenv("EMAIL_FROM") or user).strip()
+
+    try:
+        port = int(port_str)
+    except ValueError:
+        raise RuntimeError(f"Invalid SMTP_PORT value: {port_str!r}")
+
+    missing = [
+        name
+        for name, val in {"SMTP_HOST": host, "SMTP_USER": user, "SMTP_PASS": pwd}.items()
+        if not val
+    ]
+    if missing:
+        raise RuntimeError("Missing required SMTP environment variables: " + ", ".join(missing))
 
     msg = EmailMessage()
     msg["Subject"] = "Store Watcher test"
-    msg["From"] = sender
+    msg["From"] = sender or user
     msg["To"] = to
     msg.set_content("This is a Store Watcher test message (text).")
     msg.add_alternative(
@@ -67,12 +85,18 @@ def _send_test_email(cfg: dict[str, Any]) -> None:
     )
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(host, port, timeout=15) as s:
-        # Heuristic: use STARTTLS for 587
-        if port == 587:
-            s.starttls(context=context)
-        s.login(user, pwd)
-        s.send_message(msg)
+
+    # Use SMTPS for 465, STARTTLS for 587, plain for others
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, context=context, timeout=15) as s:
+            s.login(user, pwd)
+            s.send_message(msg)
+    else:
+        with smtplib.SMTP(host, port, timeout=15) as s:
+            if port == 587:
+                s.starttls(context=context)
+            s.login(user, pwd)
+            s.send_message(msg)
 
 
 @router.get("/listeners", response_class=HTMLResponse)
