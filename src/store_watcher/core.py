@@ -7,7 +7,7 @@ import traceback
 from collections.abc import Iterable
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional, Pattern
+from typing import Any, Dict, Optional, Pattern
 
 from dotenv import load_dotenv
 
@@ -15,12 +15,7 @@ from .adapters.base import Adapter, Item
 from .adapters.sfcc import SFCCGridAdapter
 from .db.config import ensure_listener_schema
 from .db.items import load_items_dict, save_items
-from .notify import (
-    Notifier,
-    build_notifiers_from_db,
-    build_notifiers_from_env,
-    render_change_digest,
-)
+from .notify import build_notifiers_from_db, render_change_digest
 from .utils import (
     domain_of,
     iso_to_dt,
@@ -32,7 +27,7 @@ from .utils import (
 
 ADAPTERS: dict[str, Adapter] = {
     "sfcc": SFCCGridAdapter(),
-    "disneystore": SFCCGridAdapter(),  # alias for convenience
+    "disneystore": SFCCGridAdapter(),  # alias
 }
 
 
@@ -40,15 +35,47 @@ def _compile(rx: Optional[str]) -> Optional[Pattern[str]]:
     return re.compile(rx) if rx else None
 
 
-def _split_urls(urls: str) -> list[str]:
-    parts = [p.strip() for p in re.split(r"[,\n]", urls) if p.strip()]
-    seen: set[str] = set()
-    out: list[str] = []
-    for p in parts:
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
+def _make_present_record(
+    url: str,
+    now_iso: str,
+    name: str | None = None,
+    host: str | None = None,
+    image: str | None = None,
+) -> Dict[str, Any]:
+    rec: Dict[str, Any] = {
+        "url": url,
+        "first_seen": now_iso,
+        "status": 1,
+        "status_since": now_iso,
+    }
+    if name:
+        rec["name"] = name
+    if host:
+        rec["host"] = host
+    if image:
+        rec["image"] = image
+    return rec
+
+
+def _migrate_keys_to_composite(
+    state: Dict[str, Dict[str, Any]], default_host: str
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Upgrade keys like '4380...' -> '<host>:4380...'. If already composite, keep.
+    Ensure each record carries 'host'.
+    """
+    upgraded: Dict[str, Dict[str, Any]] = {}
+    for k, v in state.items():
+        if ":" in k:
+            host, _code = k.split(":", 1)
+            v.setdefault("host", host)
+            upgraded[k] = v
+        else:
+            # legacy numeric key – use default_host as prefix
+            new_key = f"{default_host}:{k}"
+            v.setdefault("host", default_host)
+            upgraded[new_key] = v
+    return upgraded
 
 
 def run_watcher(
@@ -65,40 +92,27 @@ def run_watcher(
 
     adapter = ADAPTERS.get(site) or ADAPTERS["sfcc"]
 
-    env_single = os.getenv("TARGET_URL", "").strip()
-    env_multi = os.getenv("TARGET_URLS", "").strip()
-    urls: list[str] = []
+    # ---- SINGLE URL ONLY ----
+    url = url_override or os.getenv("TARGET_URL", "").strip()
+    if not url:
+        raise SystemExit("Set TARGET_URL in env or pass --url")
 
-    if url_override:
-        urls = _split_urls(url_override)
-    elif env_multi:
-        urls = _split_urls(env_multi)
-    elif env_single:
-        urls = [env_single]
+    state_db = os.getenv("STATE_DB", "").strip()
+    if not state_db:
+        raise SystemExit("Set STATE_DB to a writable SQLite path (e.g. /app/data/state.db)")
 
-    if not urls:
-        raise SystemExit("Set TARGET_URL or TARGET_URLS in .env, or pass --url/--urls")
-
+    default_host = domain_of(url)
     include_rx = _compile(include_re or os.getenv("INCLUDE_RE", "").strip() or None)
     exclude_rx = _compile(exclude_re or os.getenv("EXCLUDE_RE", "").strip() or None)
     restock_delta = timedelta(hours=restock_hours)
 
-    state_db = os.getenv("STATE_DB", "").strip()
-    if not state_db:
-        raise SystemExit("STATE_DB must be set (SQLite is now the only supported backend).")
+    watcher_label = site_label(url)
 
-    watcher_label = site_label(urls[0])
-
-    # ---------- notifier configuration ----------
-    notifiers: list[Notifier] = []
+    # ---- Notifiers from DB only ----
     ensure_listener_schema(Path(state_db))
-    notifiers = build_notifiers_from_db(state_db, watcher_label) or build_notifiers_from_env() or []
-    if not notifiers:
-        print("[warn] No notifiers configured (set SMTP_* or DISCORD_WEBHOOK_URL). Will log only.")
+    notifiers = build_notifiers_from_db(state_db, watcher_label)
 
-    print(f"[info] Watching {len(urls)} URL(s) via adapter={site}")
-    for u in urls:
-        print(f"       - {u} [{site_label(u)}]")
+    print(f"[info] Watching: {url} via adapter={site}")
     if include_rx:
         print(f"[info] Include: {include_rx.pattern}")
     if exclude_rx:
@@ -106,32 +120,22 @@ def run_watcher(
     print(f"[info] Restock window: {restock_hours}h")
     print(f"[info] State backend: sqlite ({state_db})")
 
-    # Load current items dict (key → record)
+    # Load current state (SQLite only) and normalize keys
     state = load_items_dict(Path(state_db))
+    state = _migrate_keys_to_composite(state, default_host)
+    save_items(state, Path(state_db))  # persist any migrations
     print(f"[info] Known items: {len(state)}")
 
     session = make_session()
-    managed_hosts: set[str] = {domain_of(u) for u in urls}
+    managed_host = domain_of(url)
+    label = site_label(url)
 
-    def _make_present_record(url: str, now_iso: str, name: str | None, host: str) -> dict:
-        rec: dict = {
-            "url": url,
-            "first_seen": now_iso,
-            "status": 1,
-            "status_since": now_iso,
-            "host": host,
-        }
-        if name:
-            rec["name"] = name
-        return rec
-
-    # ---------- inner loop ----------
     def tick() -> None:
         nonlocal state
         now_iso = utcnow_iso()
         now_dt = iso_to_dt(now_iso)
 
-        site_current_counts: dict[str, int] = {}
+        site_current_count = 0
         site_new: dict[str, list[str]] = {}
         site_restocked: dict[str, list[str]] = {}
 
@@ -140,36 +144,29 @@ def run_watcher(
         name_for_key: dict[str, str] = {}
         image_for_key: dict[str, str] = {}
 
-        for url in urls:
-            host = domain_of(url)
-            label = site_label(url)
-            items: Iterable[Item] = adapter.fetch(
-                session=session,
-                url=url,
-                include_rx=include_rx,
-                exclude_rx=exclude_rx,
-            )
-            count = 0
-            for it in items:
-                count += 1
-                key = f"{host}:{it.code}"
-                present_keys.add(key)
-                if it.url:
-                    url_for_key[key] = it.url
-                if it.title:
-                    name_for_key[key] = it.title
-                elif it.url:
-                    fallback = pretty_name_from_url(it.url)
-                    if fallback:
-                        name_for_key[key] = fallback
-                if it.image:
-                    image_for_key[key] = it.image
-            site_current_counts[label] = site_current_counts.get(label, 0) + count
+        # fetch current items
+        items_iter: Iterable[Item] = adapter.fetch(
+            session=session, url=url, include_rx=include_rx, exclude_rx=exclude_rx
+        )
+        for it in items_iter:
+            site_current_count += 1
+            key = f"{managed_host}:{it.code}"
+            present_keys.add(key)
+            if it.url:
+                url_for_key[key] = it.url
+            if it.title:
+                name_for_key[key] = it.title
+            elif it.url:
+                fallback = pretty_name_from_url(it.url)
+                if fallback:
+                    name_for_key[key] = fallback
+            if it.image:
+                image_for_key[key] = it.image
 
-        # mark absences
+        # mark absences (only for our host)
         for key, info in state.items():
             key_host = key.split(":", 1)[0]
-            if key_host not in managed_hosts:
+            if key_host != managed_host:
                 continue
             if key not in present_keys and info.get("status", 1) == 1:
                 info["status"] = 0
@@ -182,13 +179,15 @@ def run_watcher(
             preferred_img = image_for_key.get(key, state.get(key, {}).get("image", ""))
 
             if key not in state:
-                host, _code = key.split(":", 1)
-                rec = _make_present_record(preferred_url, now_iso, preferred_name, host=host)
-                if preferred_img:
-                    rec["image"] = preferred_img
+                rec = _make_present_record(
+                    preferred_url,
+                    now_iso,
+                    preferred_name,
+                    host=managed_host,
+                    image=preferred_img or None,
+                )
                 state[key] = rec
-                lab = site_label(host)
-                site_new.setdefault(lab, []).append(key)
+                site_new.setdefault(label, []).append(key)
             else:
                 info = state[key]
                 if preferred_url and preferred_url != info.get("url", ""):
@@ -197,18 +196,17 @@ def run_watcher(
                     info["name"] = preferred_name
                 if preferred_img and not info.get("image"):
                     info["image"] = preferred_img
-                info.setdefault("host", key.split(":", 1)[0])
+                info.setdefault("host", managed_host)
                 if info.get("status", 0) == 0:
                     absent_since = iso_to_dt(info.get("status_since", now_iso))
                     if now_dt - absent_since >= restock_delta:
-                        lab = site_label(key.split(":", 1)[0])
-                        site_restocked.setdefault(lab, []).append(key)
+                        site_restocked.setdefault(label, []).append(key)
                     info["status"] = 1
                     info["status_since"] = now_iso
                 else:
                     info["status"] = 1
 
-        # persist
+        # persist (SQLite only)
         save_items(state, Path(state_db))
 
         # notify
@@ -218,7 +216,7 @@ def run_watcher(
             new_codes.extend(keys)
         for _lab, keys in site_restocked.items():
             restocked_codes.extend(keys)
-        total_now = sum(site_current_counts.values())
+        total_now = site_current_count
 
         if new_codes or restocked_codes:
             subject, html_body, text_body = render_change_digest(
@@ -226,7 +224,7 @@ def run_watcher(
                 restocked_codes=restocked_codes,
                 state=state,
                 restock_hours=restock_hours,
-                target_url="(multiple)",
+                target_url=url,
                 total_count=total_now,
             )
             for n in notifiers:
@@ -236,9 +234,9 @@ def run_watcher(
                     traceback.print_exc()
 
         print(
-            "[info] tick: "
-            f"total={total_now} new={len(new_codes)} "
-            f"restocked={len(restocked_codes)} known={len(state)}"
+            "[info] tick: total={} new={} restocked={} known={}".format(
+                total_now, len(new_codes), len(restocked_codes), len(state)
+            )
         )
 
     while True:

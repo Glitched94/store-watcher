@@ -149,9 +149,11 @@ activemq-data/
 
 # Environments
 .env
+.env.shared
 .env.asia
 .env.au
 .env.eu
+.env.ui
 .env.uk
 .env.us
 .envrc

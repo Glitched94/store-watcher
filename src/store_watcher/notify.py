@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import os
 import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import ssl
+from email.message import EmailMessage
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Tuple
 
 import requests
 
@@ -19,7 +19,7 @@ from .utils import pretty_name_from_url, short_product_url_from_state, site_labe
 class Notifier:
     """Abstract notifier. Implement send()."""
 
-    def send(self, title: str, html_body: str, text_body: str | None = None) -> None:
+    def send(self, subject: str, html_body: str, text_body: str) -> None:
         raise NotImplementedError
 
 
@@ -27,67 +27,60 @@ class Notifier:
 
 
 class EmailNotifier(Notifier):
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        user: str,
-        password: str,
-        email_from: str,
-        email_to: str,
-        use_starttls: bool = True,
-    ):
-        self.host = host
-        self.port = port
-        self.user = user
-        self.password = password
-        self.email_from = email_from or user
-        self.email_to = email_to
-        self.use_starttls = use_starttls
+    """Uses SMTP_* and EMAIL_FROM from env; recipient comes from listener config."""
 
-    def send(self, title: str, html_body: str, text_body: str | None = None) -> None:
-        if not (self.host and self.user and self.password and self.email_from and self.email_to):
-            print("[warn] EmailNotifier missing configuration; skipping")
-            return
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = title
-        msg["From"] = self.email_from
-        msg["To"] = self.email_to
-        if text_body:
-            msg.attach(MIMEText(text_body, "plain"))
-        msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(self.host, self.port) as s:
-            if self.use_starttls:
-                s.starttls()
-            s.login(self.user, self.password)
-            s.sendmail(self.email_from, [self.email_to], msg.as_string())
+    def __init__(self, to_addr: str) -> None:
+        self.to_addr = to_addr
+
+    @staticmethod
+    def _smtp_settings() -> Tuple[str, int, str, str, str]:
+        host = os.getenv("SMTP_HOST", "")
+        port = int(os.getenv("SMTP_PORT", "587") or "587")
+        user = os.getenv("SMTP_USER", "")
+        pwd = os.getenv("SMTP_PASS", "")
+        from_addr = os.getenv("EMAIL_FROM", user or "")
+        if not (host and user and pwd and from_addr):
+            raise RuntimeError(
+                "SMTP not configured (need SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM)."
+            )
+        return host, port, user, pwd, from_addr
+
+    def send(self, subject: str, html_body: str, text_body: str) -> None:
+        host, port, user, pwd, from_addr = self._smtp_settings()
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = self.to_addr
+        msg.set_content(text_body)
+        msg.add_alternative(html_body, subtype="html")
+
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP(host, port) as s:
+            s.starttls(context=ctx)
+            s.login(user, pwd)
+            s.send_message(msg)
 
 
 # ---------- Discord Webhook ----------
 
+DISCORD_EMBEDS_SUPPRESSED = 4
 
-class DiscordWebhookNotifier(Notifier):
+
+class DiscordNotifier(Notifier):
     """
     Sends Discord messages with masked links and *suppressed embeds*,
     automatically chunking into multiple messages under ~2000 chars.
     """
 
-    def __init__(
-        self, webhook_url: str, username: str | None = None, avatar_url: str | None = None
-    ):
+    def __init__(self, webhook_url: str) -> None:
         self.webhook_url = webhook_url
-        self.username = username
-        self.avatar_url = avatar_url
 
     def _post(self, content: str) -> None:
         payload: dict[str, Any] = {
             "content": content,
-            "flags": 4,  # SUPPRESS_EMBEDS
+            "flags": DISCORD_EMBEDS_SUPPRESSED,
         }
-        if self.username:
-            payload["username"] = self.username
-        if self.avatar_url:
-            payload["avatar_url"] = self.avatar_url
+
         r = requests.post(
             self.webhook_url,
             data=json.dumps(payload),
@@ -95,15 +88,23 @@ class DiscordWebhookNotifier(Notifier):
             timeout=15,
         )
         if r.status_code >= 300:
-            print(f"[warn] Discord webhook returned {r.status_code}: {r.text[:200]}")
+            # Surface the error text so test UI can show why it failed
+            raise RuntimeError(f"Discord webhook {r.status_code}: {r.text[:300]}")
 
     def send(self, title: str, html_body: str, text_body: str | None = None) -> None:
         if not self.webhook_url:
-            print("[warn] DiscordWebhookNotifier missing webhook_url; skipping")
+            # Soft-fail to avoid crashing watcher if a row is misconfigured
+            print("[warn] DiscordNotifier missing webhook_url; skipping")
             return
 
-        content = (text_body or title).strip()
-        limit = 1900  # safety margin
+        # Prefer the plaintext digest (already masked links). Fallback to title.
+        content = (text_body or title or "").strip()
+        if not content:
+            return
+
+        # Discord hard limit is 2000; stay a bit under to be safe
+        limit = 1900
+
         if len(content) <= limit:
             self._post(content)
             return
@@ -120,6 +121,7 @@ class DiscordWebhookNotifier(Notifier):
                 cur = 0
             buf.append(line)
             cur += add_len
+
         if buf:
             self._post("\n".join(buf))
 
@@ -244,72 +246,22 @@ def render_change_digest(
     return subject, html_body, text_body
 
 
-# ---------- Factory from env ----------
+# ---------- Factories ----------
 
 
-def build_notifiers_from_env() -> list[Notifier]:
-    notifiers: list[Notifier] = []
+def build_notifiers_from_db(state_db_path: str, watcher_label: str) -> List[Notifier]:
+    """Create notifiers for all listeners (of any region) in the DB."""
 
-    # Email (SMTP)
-    smtp_host = os.getenv("SMTP_HOST", "")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER", "")
-    smtp_pass = os.getenv("SMTP_PASS", "")
-    email_from = os.getenv("EMAIL_FROM", smtp_user)
-    email_to = os.getenv("EMAIL_TO", "")
-
-    if smtp_host and smtp_user and smtp_pass and email_to:
-        notifiers.append(
-            EmailNotifier(smtp_host, smtp_port, smtp_user, smtp_pass, email_from, email_to)
-        )
-
-    # Discord
-    discord_url = os.getenv("DISCORD_WEBHOOK_URL", "")
-    discord_name = os.getenv("DISCORD_USERNAME", "") or None
-    discord_avatar = os.getenv("DISCORD_AVATAR_URL", "") or None
-    if discord_url:
-        notifiers.append(DiscordWebhookNotifier(discord_url, discord_name, discord_avatar))
-
-    return notifiers
-
-
-# ---------- Factory from db ----------
-
-
-def build_notifiers_from_db(state_db_path: str, region: str) -> list[Notifier]:
-    """Load enabled listeners for this region (plus ALL)."""
-    notifiers: list[Notifier] = []
-    for listener in list_listeners(Path(state_db_path), region=region):
+    notifiers: List[Notifier] = []
+    for listener in list_listeners(Path(state_db_path)):
         if not listener.enabled:
             continue
-
         if listener.kind == "discord":
-            cfg = listener.config
-            url = (cfg.get("webhook_url") or "").strip()
+            url = str(listener.config.get("webhook_url") or "").strip()
             if url:
-                notifiers.append(
-                    DiscordWebhookNotifier(
-                        url,
-                        cfg.get("username") or None,
-                        cfg.get("avatar_url") or None,
-                    )
-                )
-
+                notifiers.append(DiscordNotifier(url))
         elif listener.kind == "email":
-            cfg = listener.config
-            host = (cfg.get("smtp_host") or "").strip()
-            user = (cfg.get("smtp_user") or "").strip()
-            pw = (cfg.get("smtp_pass") or "").strip()
-            to = (cfg.get("to") or "").strip()
-            if host and user and pw and to:
-                notifiers.append(
-                    EmailNotifier(
-                        host,
-                        int(cfg.get("smtp_port") or 587),
-                        user,
-                        pw,
-                        (cfg.get("from") or user),
-                        to,
-                    )
-                )
+            to_addr = str(listener.config.get("to") or "").strip()
+            if to_addr:
+                notifiers.append(EmailNotifier(to_addr))
     return notifiers

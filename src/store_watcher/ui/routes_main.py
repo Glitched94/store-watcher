@@ -518,22 +518,10 @@ async def config() -> JSONResponse:
         "state_path": str(path),
         "check_every": int(os.getenv("CHECK_EVERY", "300") or 300),
         "restock_window_hours": int(os.getenv("RESTOCK_WINDOW_HOURS", "24") or 24),
-        "target_urls": (os.getenv("TARGET_URLS") or os.getenv("TARGET_URL") or "").split(","),
         "include_re": os.getenv("INCLUDE_RE", ""),
         "exclude_re": os.getenv("EXCLUDE_RE", ""),
-        "notifiers": {
-            "email": bool(
-                os.getenv("SMTP_HOST")
-                and os.getenv("SMTP_USER")
-                and os.getenv("SMTP_PASS")
-                and os.getenv("EMAIL_TO")
-            ),
-            "discord": bool(os.getenv("DISCORD_WEBHOOK_URL")),
-        },
         # masked secrets
         "smtp_host": _safe_env("SMTP_HOST"),
         "smtp_user": _safe_env("SMTP_USER"),
-        "email_to": _safe_env("EMAIL_TO"),
-        "discord_webhook_url": _safe_env("DISCORD_WEBHOOK_URL"),
     }
     return JSONResponse(data)

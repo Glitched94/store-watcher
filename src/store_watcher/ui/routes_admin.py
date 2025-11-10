@@ -88,7 +88,7 @@ async def admin_listeners(user: UserDep) -> HTMLResponse:
         if listener.kind == "discord":
             display = f"Webhook: {(cfg.get('webhook_url') or '')[:48]}..."
         else:
-            display = f"SMTP: {cfg.get('smtp_host')} → {cfg.get('to')}"
+            display = f"To: {cfg.get('to')}"
 
         rows.append(
             f"""
@@ -159,39 +159,12 @@ async def admin_listeners(user: UserDep) -> HTMLResponse:
             <label class="block text-xs text-slate-400">Discord Webhook URL</label>
             <input name="discord_webhook_url" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
         </div>
-        <div data-kind-section="discord">
-            <label class="block text-xs text-slate-400">Discord Username (optional)</label>
-            <input name="discord_username" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
-        <div data-kind-section="discord">
-            <label class="block text-xs text-slate-400">Discord Avatar URL (optional)</label>
-            <input name="discord_avatar" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
 
         <!-- Email-only -->
-        <div data-kind-section="email">
-            <label class="block text-xs text-slate-400">SMTP Host</label>
-            <input name="smtp_host" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
-        <div data-kind-section="email">
-            <label class="block text-xs text-slate-400">SMTP Port</label>
-            <input name="smtp_port" value="587" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
-        <div data-kind-section="email">
-            <label class="block text-xs text-slate-400">SMTP User</label>
-            <input name="smtp_user" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
-        <div data-kind-section="email">
-            <label class="block text-xs text-slate-400">SMTP Pass</label>
-            <input name="smtp_pass" type="password" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
-        <div data-kind-section="email">
-            <label class="block text-xs text-slate-400">From</label>
-            <input name="smtp_from" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
-        </div>
-        <div data-kind-section="email">
-            <label class="block text-xs text-slate-400">To</label>
-            <input name="smtp_to" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
+        <div data-kind-section="email" class="md:col-span-2">
+            <label class="block text-xs text-slate-400">Email To</label>
+            <input name="smtp_to" type="email" placeholder="recipient@example.com" class="w-full bg-slate-900/70 border border-slate-800/60 rounded px-2 py-1" />
+            <div class="mt-1 text-xs text-slate-400">Uses SMTP_* and EMAIL_FROM from server env.</div>
         </div>
 
         <div class="md:col-span-2">
@@ -248,35 +221,20 @@ async def admin_listeners_add(
     k = kind.lower().strip()
     if k not in ("discord", "email"):
         return HTMLResponse("<div class='text-rose-400'>Unknown kind.</div>", status_code=400)
-
     kind_lit = cast(Literal["discord", "email"], k)
 
-    cfg: dict[str, Any]
     if kind_lit == "discord":
         if not discord_webhook_url.strip():
             return HTMLResponse(
-                "<div class='text-rose-400'>Webhook URL required for Discord.</div>",
-                status_code=400,
+                "<div class='text-rose-400'>Webhook URL required.</div>", status_code=400
             )
-        cfg = {
-            "webhook_url": discord_webhook_url.strip(),
-            "username": discord_username.strip() or None,
-            "avatar_url": discord_avatar.strip() or None,
-        }
-    else:  # "email"
-        if not (smtp_host.strip() and smtp_user.strip() and smtp_pass.strip() and smtp_to.strip()):
+        cfg = {"webhook_url": discord_webhook_url.strip()}
+    else:
+        if not smtp_to.strip():
             return HTMLResponse(
-                "<div class='text-rose-400'>SMTP host/user/pass and To are required.</div>",
-                status_code=400,
+                "<div class='text-rose-400'>Email To address is required.</div>", status_code=400
             )
-        cfg = {
-            "smtp_host": smtp_host.strip(),
-            "smtp_port": int(smtp_port or "587"),
-            "smtp_user": smtp_user.strip(),
-            "smtp_pass": smtp_pass.strip(),
-            "from": (smtp_from.strip() or smtp_user.strip()),
-            "to": smtp_to.strip(),
-        }
+        cfg = {"to": smtp_to.strip()}
 
     add_listener(
         dbp,
