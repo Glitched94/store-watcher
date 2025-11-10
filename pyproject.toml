@@ -38,6 +38,7 @@ ui = [
   "python-multipart",
   "authlib>=1.3",
   "httpx>=0.27",
+  "itsdangerous>=2.2",
 ]
 # Convenience bundle for local dev of the app + UI
 all = [
