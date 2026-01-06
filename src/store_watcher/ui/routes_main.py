@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.requests import Request
 
 from ..utils import site_label
-from .helpers import _load_state_any, _safe_env, _state_sources, _state_version, _to_ord
+from .helpers import _h_since, _load_state_any, _safe_env, _state_sources, _state_version, _to_ord
 from .renderers import _card_grid, _row_list
 
 router = APIRouter()
@@ -446,6 +446,7 @@ async def state_endpoint(
     page_size: int = Query(50, ge=10, le=200),
 ) -> HTMLResponse:
     state = _load_state_any()
+    restock_window_hours = int(os.getenv("RESTOCK_WINDOW_HOURS", "24") or 24)
 
     region_order: Dict[str, int] = {"US": 0, "EU": 1, "UK": 2, "ASIA": 3, "AU": 4}
 
@@ -476,15 +477,57 @@ async def state_endpoint(
     end = min(start + page_size, total)
     page_items = items_sorted[start:end]
 
+    def _flags(v: Dict[str, Any]) -> Tuple[bool, bool, Optional[float], Optional[float], str, str]:
+        first_seen_raw = v.get("first_seen") or ""
+        status_since_raw = v.get("status_since") or first_seen_raw
+        first_seen = str(first_seen_raw)
+        status_since = str(status_since_raw)
+        hours_since_first = _h_since(first_seen)
+        hours_since_status = _h_since(status_since)
+        is_new = hours_since_first is not None and hours_since_first <= restock_window_hours
+        status_now = int(v.get("status", 0)) == 1
+        seen_status_change = bool(status_since) and status_since != first_seen
+        is_restocked = (
+            status_now
+            and seen_status_change
+            and hours_since_status is not None
+            and hours_since_status <= restock_window_hours
+        )
+        return is_new, is_restocked, hours_since_first, hours_since_status, first_seen, status_since
+
     # choose renderer based on view
     rows: List[str] = []
     if view == "list":
         for k, v in page_items:
-            rows.append(_row_list(k, v))
+            is_new, is_restocked, h_first, h_status, first_seen, status_since = _flags(v)
+            rows.append(
+                _row_list(
+                    k,
+                    v,
+                    is_new=is_new,
+                    is_restocked=is_restocked,
+                    hours_since_first=h_first,
+                    hours_since_status=h_status,
+                    first_seen=first_seen,
+                    status_since=status_since,
+                )
+            )
         rows_html = "".join(f'<div class="col-span-full">{r}</div>' for r in rows) if rows else ""
     else:
         for k, v in page_items:
-            rows.append(_card_grid(k, v))
+            is_new, is_restocked, h_first, h_status, first_seen, status_since = _flags(v)
+            rows.append(
+                _card_grid(
+                    k,
+                    v,
+                    is_new=is_new,
+                    is_restocked=is_restocked,
+                    hours_since_first=h_first,
+                    hours_since_status=h_status,
+                    first_seen=first_seen,
+                    status_since=status_since,
+                )
+            )
         rows_html = "".join(rows)
 
     if not rows and page == 1:
