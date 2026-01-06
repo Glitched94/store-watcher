@@ -66,7 +66,18 @@ Each watcher runs independently and monitors a single `TARGET_URL`.
 
 ```ini
 # Target page to monitor
-TARGET_URL=https://www.disneystore.com/on/demandware.store/Sites-shopDisney-Site/default/Search-UpdateGrid?cgid=collectibles-pins&start=0&sz=200
+# Option A: direct URL (legacy)
+# TARGET_URL=https://www.disneystore.com/on/demandware.store/Sites-shopDisney-Site/default/Search-UpdateGrid?cgid=collectibles-pins&start=0&sz=200
+
+# Option B: build from parts (preferred for SFCC)
+TARGET_HOST=www.disneystore.com
+TARGET_REGION_SLUG=Sites-shopDisney-Site
+TARGET_LOCALE=default
+TARGET_CATEGORY_SLUG=collectibles-pins
+# Optional overrides for the grid URL builder
+TARGET_START=0
+TARGET_PAGE_SIZE=200
+TARGET_SCHEME=https
 
 # Polling + restock behavior
 CHECK_EVERY=300

@@ -56,6 +56,40 @@ def normalize_single_url(raw: str | None) -> str:
     return candidates[0] if candidates else ""
 
 
+def _resolve_target_url(url_override: str | None) -> str:
+    """
+    Prefer an explicit URL (override or TARGET_URL). If absent, assemble a grid URL
+    from discrete SFCC components (TARGET_HOST, TARGET_REGION_SLUG, TARGET_LOCALE,
+    TARGET_CATEGORY_SLUG). Returns an empty string when insufficient data is provided.
+    """
+    direct = normalize_single_url(url_override or os.getenv("TARGET_URL", "").strip())
+    if direct:
+        return direct
+
+    host = (os.getenv("TARGET_HOST") or "").strip()
+    region = (os.getenv("TARGET_REGION_SLUG") or "").strip()
+    locale = (os.getenv("TARGET_LOCALE") or "").strip()
+    category = (os.getenv("TARGET_CATEGORY_SLUG") or "").strip()
+    start = int(os.getenv("TARGET_START", "0") or 0)
+    size = int(os.getenv("TARGET_PAGE_SIZE", "200") or 200)
+    scheme = (os.getenv("TARGET_SCHEME") or "https").strip() or "https"
+
+    if host and region and locale and category:
+        from .adapters.sfcc import build_grid_url
+
+        return build_grid_url(
+            host=host,
+            region_slug=region,
+            locale=locale,
+            category_slug=category,
+            scheme=scheme,
+            start=start,
+            size=size,
+        )
+
+    return ""
+
+
 def _make_present_record(
     url: str,
     now_iso: str,
@@ -125,12 +159,15 @@ def run_watcher(
 
     # ---- SINGLE URL ONLY ----
     try:
-        url = normalize_single_url(url_override or os.getenv("TARGET_URL", "").strip())
+        url = _resolve_target_url(url_override)
     except ValueError as exc:
         raise SystemExit(str(exc))
 
     if not url:
-        raise SystemExit("Set TARGET_URL in env or pass --url")
+        raise SystemExit(
+            "Set TARGET_URL in env, pass --url, or provide TARGET_HOST + TARGET_REGION_SLUG + "
+            "TARGET_LOCALE + TARGET_CATEGORY_SLUG"
+        )
 
     state_db = os.getenv("STATE_DB", "").strip()
     if not state_db:

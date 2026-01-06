@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
-from typing import Any, Dict, Iterable, List, Optional, Pattern, Set
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from typing import Any, Dict, Iterable, List, Optional, Pattern, Set, Tuple
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,6 +19,59 @@ from .base import Adapter, Item
 
 # SFCC-style product URLs typically end in "...-<digits>.html" (ignore query strings)
 PRODUCT_LINK_RE = re.compile(r"/[^/]+\.html(?:\?|$)", re.I)
+
+
+_SFCC_PATH_RX = re.compile(r"^/on/demandware\.store/([^/]+)/([^/]+)/", re.I)
+DEFAULT_REGION_SLUG = "Sites-shopDisney-Site"
+DEFAULT_LOCALE = "default"
+
+
+def _extract_region_slug_and_locale(u: str) -> Tuple[str, str]:
+    """
+    Parse the region slug and locale segment from an SFCC URL path.
+    Falls back to default values when the pattern is absent.
+    """
+    sp = urlsplit(u)
+    match = _SFCC_PATH_RX.search(sp.path)
+    if match:
+        return match.group(1), match.group(2)
+    return DEFAULT_REGION_SLUG, DEFAULT_LOCALE
+
+
+def _region_locale_from_env_or_url(u: str) -> Tuple[str, str]:
+    env_region = (os.getenv("TARGET_REGION_SLUG") or "").strip()
+    env_locale = (os.getenv("TARGET_LOCALE") or "").strip()
+    if env_region and env_locale:
+        return env_region, env_locale
+    return _extract_region_slug_and_locale(u)
+
+
+def _build_variation_url(u: str, code: str) -> str:
+    sp = urlsplit(u)
+    root = urlunsplit((sp.scheme or "https", sp.netloc, "", "", ""))
+    region_slug, locale = _region_locale_from_env_or_url(u)
+    path = f"/on/demandware.store/{region_slug}/{locale}/Product-Variation"
+    query = urlencode({"pid": code, "quantity": 1})
+    return urljoin(root, urlunsplit(("", "", path, query, "")))
+
+
+def build_grid_url(
+    host: str,
+    region_slug: str,
+    locale: str,
+    category_slug: str,
+    *,
+    scheme: str = "https",
+    start: int = 0,
+    size: int = 200,
+) -> str:
+    """
+    Construct an SFCC Search-UpdateGrid URL from discrete components.
+    """
+    root = urlunsplit((scheme or "https", host, "", "", ""))
+    path = f"/on/demandware.store/{region_slug}/{locale}/Search-UpdateGrid"
+    query = urlencode({"cgid": category_slug, "start": start, "sz": size})
+    return urljoin(root, urlunsplit(("", "", path, query, "")))
 
 
 def as_tag(obj: object | None) -> Optional[Tag]:
