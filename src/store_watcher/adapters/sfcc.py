@@ -46,12 +46,12 @@ def _region_locale_from_env_or_url(u: str) -> Tuple[str, str]:
     return _extract_region_slug_and_locale(u)
 
 
-def _build_variation_url(u: str, code: str) -> str:
+def _build_variation_url(u: str, code: str, *, quantity: int = 1) -> str:
     sp = urlsplit(u)
     root = urlunsplit((sp.scheme or "https", sp.netloc, "", "", ""))
     region_slug, locale = _region_locale_from_env_or_url(u)
     path = f"/on/demandware.store/{region_slug}/{locale}/Product-Variation"
-    query = urlencode({"pid": code, "quantity": 1})
+    query = urlencode({"pid": code, "quantity": max(1, int(quantity))})
     return urljoin(root, urlunsplit(("", "", path, query, "")))
 
 
@@ -198,20 +198,11 @@ class SFCCGridAdapter(Adapter):
         max_pages = 10  # safety cap
         details_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
-        def _build_variation_url(u: str, code: str) -> str:
-            sp = urlsplit(u)
-            root = urlunsplit((sp.scheme or "https", sp.netloc, "", "", ""))
-            path = (
-                "/on/demandware.store/Sites-shopDisney-Site/default/"
-                f"Product-Variation?pid={code}&quantity=1"
-            )
-            return urljoin(root, path)
-
         def _fetch_variation(code: str) -> Optional[Dict[str, Any]]:
             if code in details_cache:
                 return details_cache[code]
 
-            detail_url = _build_variation_url(url, code)
+            detail_url = _build_variation_url(url, code, quantity=10_000)
             try:
                 r = session.get(detail_url, timeout=20)
                 r.raise_for_status()
@@ -242,6 +233,11 @@ class SFCCGridAdapter(Adapter):
                 item.available = bool(details["available"])
             if details.get("availability_message"):
                 item.availability = str(details["availability_message"])
+            if details.get("in_stock_allocation") is not None:
+                try:
+                    item.in_stock_allocation = int(details["in_stock_allocation"])
+                except Exception:
+                    item.in_stock_allocation = None
             return item
 
         def _set_page(u: str, page_idx: int) -> str:
@@ -326,6 +322,40 @@ class SFCCGridAdapter(Adapter):
                 yield _enrich(it)
             page += 1
 
+    def fetch_details(self, session: requests.Session, url: str, code: str) -> Optional[Item]:
+        detail_url = _build_variation_url(url, code, quantity=10_000)
+        try:
+            r = session.get(detail_url, timeout=20)
+            r.raise_for_status()
+            payload = r.json()
+        except Exception:
+            return None
+
+        parsed = _parse_variation_payload(payload)
+        if not parsed:
+            return None
+
+        item = Item(code=code, url="")
+        if parsed.get("url"):
+            item.url = canonicalize(urljoin(url, str(parsed["url"])))
+        if parsed.get("title"):
+            item.title = str(parsed["title"])
+        if parsed.get("price"):
+            item.price = str(parsed["price"])
+        if parsed.get("available") is not None:
+            item.available = bool(parsed["available"])
+        if parsed.get("availability_message"):
+            item.availability = str(parsed["availability_message"])
+        if parsed.get("image"):
+            item.image = tune_image_url(str(parsed["image"]), size=768, quality=100)
+        if parsed.get("in_stock_allocation") is not None:
+            try:
+                item.in_stock_allocation = int(parsed["in_stock_allocation"])
+            except Exception:
+                item.in_stock_allocation = None
+
+        return item
+
 
 def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -401,6 +431,15 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(product_url, str):
         product_url = None
 
+    stock_allocation_raw = availability_data.get("inStockAllocation")
+    if isinstance(stock_allocation_raw, (int, float)):
+        try:
+            stock_allocation = int(stock_allocation_raw)
+        except Exception:
+            stock_allocation = None
+    else:
+        stock_allocation = None
+
     return {
         "available": available,
         "availability_message": message,
@@ -408,4 +447,5 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "url": product_url,
         "title": title,
         "price": price,
+        "in_stock_allocation": stock_allocation,
     }
