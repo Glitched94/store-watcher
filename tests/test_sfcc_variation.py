@@ -6,7 +6,7 @@ from store_watcher.adapters.sfcc import _parse_variation_payload
 
 def test_parse_variation_payload_sample() -> None:
     payload_path = Path(__file__).resolve().parent.parent / "Product-Variation.json"
-    raw = payload_path.read_text()
+    raw = payload_path.read_text(encoding="utf-8")
     payload = json.loads(raw)
 
     details = _parse_variation_payload(payload)
