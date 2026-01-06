@@ -17,7 +17,9 @@ def test_parse_variation_payload_sample() -> None:
 
     image = details["image"]
     assert isinstance(image, str)
-    assert image.startswith("https://cdn-ssl.s7.shopdisney.com/is/image/DisneyShopping/3803059860920")
+    assert image.startswith(
+        "https://cdn-ssl.s7.shopdisney.com/is/image/DisneyShopping/3803059860920"
+    )
 
     product_url = details["url"]
     assert isinstance(product_url, str)
