@@ -250,10 +250,12 @@ def render_change_digest(
 
 
 def build_notifiers_from_db(state_db_path: str, watcher_label: str) -> List[Notifier]:
-    """Create notifiers for all listeners (of any region) in the DB."""
+    """Create notifiers scoped to the watcher's region (including ALL)."""
+
+    region = (watcher_label or "").strip().upper() or None
 
     notifiers: List[Notifier] = []
-    for listener in list_listeners(Path(state_db_path)):
+    for listener in list_listeners(Path(state_db_path), region=region):
         if not listener.enabled:
             continue
         if listener.kind == "discord":
