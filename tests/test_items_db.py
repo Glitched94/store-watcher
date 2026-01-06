@@ -9,7 +9,15 @@ from store_watcher.db.items import (
 )
 
 
-def _state_record(url: str, *, name: str | None = None, image: str | None = None) -> dict:
+def _state_record(
+    url: str,
+    *,
+    name: str | None = None,
+    image: str | None = None,
+    price: str | None = None,
+    availability_message: str | None = None,
+    available: bool | None = None,
+) -> dict:
     rec = {
         "url": url,
         "first_seen": "2025-01-01T00:00:00Z",
@@ -20,6 +28,12 @@ def _state_record(url: str, *, name: str | None = None, image: str | None = None
         rec["name"] = name
     if image:
         rec["image"] = image
+    if price:
+        rec["price"] = price
+    if availability_message:
+        rec["availability_message"] = availability_message
+    if available is not None:
+        rec["available"] = available
     return rec
 
 
@@ -33,9 +47,13 @@ def test_items_roundtrip_via_state_dict(tmp_path: Path) -> None:
             "https://www.disneystore.com/animal-pin-the-muppets-438039197642.html",
             name="Animal Pin – The Muppets",
             image="https://cdn.example.com/438039197642.jpg",
+            price="$9.99",
+            availability_message="Low Stock",
+            available=True,
         ),
         "disneystore.com:438018657693": _state_record(
-            "https://www.disneystore.com/xyz-438018657693.html"
+            "https://www.disneystore.com/xyz-438018657693.html",
+            available=False,
         ),
     }
 
@@ -57,8 +75,12 @@ def test_items_roundtrip_via_state_dict(tmp_path: Path) -> None:
     assert a["name"] == "Animal Pin – The Muppets"
     assert a["status"] == 1
     assert a["image"].endswith("438039197642.jpg")
+    assert a["price"] == "$9.99"
+    assert a["availability_message"] == "Low Stock"
+    assert a["available"] is True
 
     b = items_out["disneystore.com:438018657693"]
     assert b["status"] == 1
+    assert b["available"] is False
     # optional name presence is fine either way
     assert "name" not in b or isinstance(b["name"], str)
