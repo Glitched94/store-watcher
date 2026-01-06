@@ -31,8 +31,29 @@ ADAPTERS: dict[str, Adapter] = {
 }
 
 
+MULTIPLE_URLS_ERROR = "Only a single URL is supported. Run one watcher per target page."
+
+
 def _compile(rx: Optional[str]) -> Optional[Pattern[str]]:
     return re.compile(rx) if rx else None
+
+
+def normalize_single_url(raw: str | None) -> str:
+    """
+    Trim the input and ensure only one URL is provided.
+
+    Accepts comma or newline separators, raising if multiple entries are detected.
+    Returns an empty string when the input is None or blank.
+    """
+
+    if raw is None:
+        return ""
+
+    candidates = [p.strip() for p in re.split(r"[,\n]", raw) if p.strip()]
+    if len(candidates) > 1:
+        raise ValueError(MULTIPLE_URLS_ERROR)
+
+    return candidates[0] if candidates else ""
 
 
 def _make_present_record(
@@ -93,7 +114,11 @@ def run_watcher(
     adapter = ADAPTERS.get(site) or ADAPTERS["sfcc"]
 
     # ---- SINGLE URL ONLY ----
-    url = url_override or os.getenv("TARGET_URL", "").strip()
+    try:
+        url = normalize_single_url(url_override or os.getenv("TARGET_URL", "").strip())
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+
     if not url:
         raise SystemExit("Set TARGET_URL in env or pass --url")
 

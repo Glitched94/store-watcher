@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from store_watcher.ui import create_app
 
-from .core import run_watcher
+from .core import MULTIPLE_URLS_ERROR, normalize_single_url, run_watcher
 
 # NEW: use the db layer directly
 from .db.items import load_items_dict, save_items
@@ -20,8 +20,7 @@ app = typer.Typer(help="Watch store pages and alert on new/restocked items.")
 @app.command("watch")
 def watch(
     site: str = typer.Option("disneystore", help="Adapter/site to use (sfcc/disneystore)"),
-    url: str = typer.Option(None, help="Override single URL"),
-    urls: str = typer.Option(None, help="Comma or newline separated list of URLs"),
+    url: str = typer.Option(None, help="Target URL (overrides TARGET_URL env)"),
     every: int = typer.Option(300, "--every", "-e", help="Check interval in seconds"),
     restock: int = typer.Option(24, "--restock", "-r", help="Restock window in hours"),
     include_re: str = typer.Option("", help="Python regex to include URLs"),
@@ -29,9 +28,14 @@ def watch(
     once: bool = typer.Option(False, help="Run a single tick then exit"),
     env: str | None = typer.Option(None, "--env", help="Path to a .env file to load"),
 ) -> None:
+    try:
+        single_url = normalize_single_url(url)
+    except ValueError:
+        raise typer.BadParameter(MULTIPLE_URLS_ERROR)
+
     run_watcher(
         site=site,
-        url_override=urls or url,  # pass whichever is set; core will split
+        url_override=single_url or None,
         interval=every,
         restock_hours=restock,
         include_re=include_re or None,

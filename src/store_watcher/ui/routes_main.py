@@ -372,11 +372,8 @@ async def index(request: Request) -> HTMLResponse:
                   <div class="font-mono">${{data.restock_window_hours}}h</div>
                 </div>
                 <div class="sm:col-span-2">
-                  <div class="text-slate-400 text-xs">Target URLs</div>
-                  <ul class="mt-1 space-y-1">
-                    ${{data.target_urls.filter(Boolean).map(u => `<li class="font-mono break-all">${{u.trim()}}</li>`).join('')}}
-                  </ul>
-                </div>
+                  <div class="text-slate-400 text-xs">Target URL</div>
+                  <div class="font-mono break-all">${{data.target_url || '—'}}</div>
                 <div>
                   <div class="text-slate-400 text-xs">Include RE</div>
                   <div class="font-mono">${{data.include_re || '—'}}</div>
@@ -520,6 +517,7 @@ async def config() -> JSONResponse:
         "restock_window_hours": int(os.getenv("RESTOCK_WINDOW_HOURS", "24") or 24),
         "include_re": os.getenv("INCLUDE_RE", ""),
         "exclude_re": os.getenv("EXCLUDE_RE", ""),
+        "target_url": os.getenv("TARGET_URL", ""),
         # masked secrets
         "smtp_host": _safe_env("SMTP_HOST"),
         "smtp_user": _safe_env("SMTP_USER"),
