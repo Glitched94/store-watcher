@@ -146,6 +146,7 @@ def _card_grid(
         <div class="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-200">
           {f'<span class="font-semibold">{v.get("price")}</span>' if v.get("price") else ""}
           {f'<span class="text-xs text-slate-400">{v.get("availability_message")}</span>' if v.get("availability_message") else ""}
+          {f'<span class="text-xs text-slate-400">Stock: {v.get("in_stock_allocation")}</span>' if v.get("in_stock_allocation") is not None else ""}
         </div>
         <div class="mt-auto pt-3 text-xs text-slate-400 space-y-1">
           <div>First seen {first_seen or '?'} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
@@ -205,6 +206,11 @@ def _row_list(
         if v.get("price")
         else ""
     )
+    stock_html = (
+        f'<div class="text-xs text-slate-400">Stock: {v.get("in_stock_allocation")}</div>'
+        if v.get("in_stock_allocation") is not None
+        else ""
+    )
     availability_line = (
         f'<div class="mt-1 text-xs text-slate-400">{v.get("availability_message")}</div>'
         if v.get("availability_message")
@@ -231,6 +237,7 @@ def _row_list(
           </div>
           <div class="flex flex-col items-end gap-2">
             {price_html}
+            {stock_html}
             <span class="text-[11px] px-2 py-0.5 rounded-full border {chip_cls} whitespace-nowrap">{chip_txt}</span>
           </div>
         </div>

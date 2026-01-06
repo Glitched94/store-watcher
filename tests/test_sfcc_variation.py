@@ -21,6 +21,7 @@ def test_parse_variation_payload_sample() -> None:
     assert details["available"] is True
     assert details["availability_message"] == "In Stock"
     assert details["price"] == "$19.99"
+    assert details["in_stock_allocation"] == 1
 
     image = details["image"]
     assert isinstance(image, str)

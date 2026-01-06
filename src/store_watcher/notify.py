@@ -189,9 +189,12 @@ def render_change_digest(
         name = info.get("name") or pretty_name_from_url(url) or str(code)
         short_url = short_product_url_from_state(url, code if code.isdigit() else "")
 
+        stock_raw = info.get("in_stock_allocation")
+        stock_txt = f" — Stock: {stock_raw}" if stock_raw is not None else ""
+
         prefix = f"[{label}] "
-        html_li = f'<li>{prefix}<a href="{short_url}">{name}</a></li>'
-        text_li = f"- {prefix}[{name}]({short_url})"
+        html_li = f'<li>{prefix}<a href="{short_url}">{name}</a>{stock_txt}</li>'
+        text_li = f"- {prefix}[{name}]({short_url}){stock_txt}"
         return name, html_li, text_li
 
     # ----- subject -----

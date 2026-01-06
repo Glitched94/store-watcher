@@ -9,6 +9,7 @@ def _state(url: str, name: str | None = None) -> Dict[str, Any]:
         "first_seen": "2025-01-01T00:00:00Z",
         "status": 1,
         "status_since": "2025-01-01T00:00:00Z",
+        "in_stock_allocation": 5,
     }
     if name:
         rec["name"] = name
@@ -42,6 +43,7 @@ def test_render_change_digest_basic() -> None:
         'href="https://www.disneystore.com/438039197642.html"' in html_body
         or 'href="https://disneystore.com/438039197642.html"' in html_body
     )
+    assert "Stock: 5" in html_body
 
     # The display name should appear somewhere in HTML
     assert "Muppets" in html_body or "Animal Pin" in html_body
@@ -51,4 +53,5 @@ def test_render_change_digest_basic() -> None:
         "https://www.disneystore.com/438039197642.html" in text_body
         or "https://disneystore.com/438039197642.html" in text_body
     )
+    assert "Stock: 5" in text_body
     assert "Changes detected on" not in text_body

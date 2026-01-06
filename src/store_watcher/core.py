@@ -99,6 +99,7 @@ def _make_present_record(
     price: str | None = None,
     availability_message: str | None = None,
     available: bool | None = None,
+    in_stock_allocation: int | None = None,
     status: int = 1,
 ) -> Dict[str, Any]:
     rec: Dict[str, Any] = {
@@ -119,6 +120,8 @@ def _make_present_record(
         rec["availability_message"] = availability_message
     if available is not None:
         rec["available"] = available
+    if in_stock_allocation is not None:
+        rec["in_stock_allocation"] = in_stock_allocation
     return rec
 
 
@@ -218,6 +221,7 @@ def run_watcher(
         price_for_key: dict[str, str] = {}
         availability_message_for_key: dict[str, str] = {}
         available_for_key: dict[str, Optional[bool]] = {}
+        allocation_for_key: dict[str, Optional[int]] = {}
 
         # fetch current items
         items_iter: Iterable[Item] = adapter.fetch(
@@ -244,6 +248,7 @@ def run_watcher(
                 price_for_key[key] = it.price
             if it.availability:
                 availability_message_for_key[key] = it.availability
+            allocation_for_key[key] = it.in_stock_allocation
 
         # mark absences (only for our host)
         for key, info in state.items():
@@ -266,6 +271,9 @@ def run_watcher(
             preferred_available = available_for_key.get(
                 key, state.get(key, {}).get("available", True)
             )
+            preferred_allocation = allocation_for_key.get(
+                key, state.get(key, {}).get("in_stock_allocation")
+            )
 
             if key not in state:
                 rec = _make_present_record(
@@ -277,6 +285,9 @@ def run_watcher(
                     price=preferred_price,
                     availability_message=preferred_availability_msg,
                     available=preferred_available if preferred_available is not None else None,
+                    in_stock_allocation=(
+                        preferred_allocation if preferred_allocation is not None else None
+                    ),
                     status=1 if preferred_available is not False else 0,
                 )
                 state[key] = rec
@@ -297,6 +308,8 @@ def run_watcher(
                     info["availability_message"] = preferred_availability_msg
                 if preferred_available is not None or info.get("available") is not None:
                     info["available"] = preferred_available
+                if preferred_allocation is not None:
+                    info["in_stock_allocation"] = preferred_allocation
                 info.setdefault("host", managed_host)
                 if preferred_available is False:
                     if info.get("status", 0) != 0:
@@ -311,6 +324,57 @@ def run_watcher(
                         info["status_since"] = now_iso
                     else:
                         info["status"] = 1
+
+        # Re-check all known items for this host (not just ones seen in the grid)
+        host_keys = [k for k in state if k.split(":", 1)[0] == managed_host]
+        for key in host_keys:
+            if key in present_keys:
+                continue
+            code = key.split(":", 1)[-1]
+            try:
+                detail_item = adapter.fetch_details(session=session, url=url, code=code)
+            except Exception:
+                detail_item = None
+            if not detail_item:
+                continue
+
+            detail_record = state.get(key)
+            if detail_record is None:
+                continue
+            info_detail: Dict[str, Any] = detail_record
+
+            prev_status = int(info.get("status", 0))
+            prev_status_since_raw = info.get("status_since", now_iso)
+            prev_status_since = (
+                iso_to_dt(prev_status_since_raw) if prev_status_since_raw else now_dt
+            )
+
+            if detail_item.url:
+                info_detail["url"] = detail_item.url
+            if detail_item.title:
+                info_detail["name"] = detail_item.title
+            if detail_item.image and not info_detail.get("image"):
+                info_detail["image"] = detail_item.image
+            if detail_item.price:
+                info_detail["price"] = detail_item.price
+            if detail_item.availability:
+                info_detail["availability_message"] = detail_item.availability
+            if detail_item.available is not None:
+                info_detail["available"] = detail_item.available
+            if detail_item.in_stock_allocation is not None:
+                info_detail["in_stock_allocation"] = detail_item.in_stock_allocation
+
+            # Update status based on refreshed availability
+            if detail_item.available is False:
+                if prev_status != 0:
+                    info_detail["status_since"] = now_iso
+                info_detail["status"] = 0
+            elif detail_item.available is True:
+                if prev_status == 0:
+                    if now_dt - prev_status_since >= restock_delta:
+                        site_restocked.setdefault(label, []).append(key)
+                    info_detail["status_since"] = now_iso
+                info_detail["status"] = 1
 
         # persist (SQLite only)
         save_items(state, Path(state_db))

@@ -15,6 +15,7 @@ class Item:
     image: Optional[str] = None
     available: Optional[bool] = None
     availability: Optional[str] = None
+    in_stock_allocation: Optional[int] = None
 
 
 class Adapter:
@@ -30,3 +31,15 @@ class Adapter:
         exclude_rx: Optional[Pattern[str]],
     ) -> Iterable[Item]:
         raise NotImplementedError
+
+    def fetch_details(
+        self,  # pragma: no cover - interface
+        session: requests.Session,
+        url: str,
+        code: str,
+    ) -> Optional[Item]:
+        """
+        Optional per-item refresher used to update details outside the grid crawl.
+        Implementations should return None on failure.
+        """
+        return None

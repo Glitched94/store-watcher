@@ -17,6 +17,7 @@ def _state_record(
     price: str | None = None,
     availability_message: str | None = None,
     available: bool | None = None,
+    in_stock_allocation: int | None = None,
 ) -> dict:
     rec = {
         "url": url,
@@ -34,6 +35,8 @@ def _state_record(
         rec["availability_message"] = availability_message
     if available is not None:
         rec["available"] = available
+    if in_stock_allocation is not None:
+        rec["in_stock_allocation"] = in_stock_allocation
     return rec
 
 
@@ -50,6 +53,7 @@ def test_items_roundtrip_via_state_dict(tmp_path: Path) -> None:
             price="$9.99",
             availability_message="Low Stock",
             available=True,
+            in_stock_allocation=12,
         ),
         "disneystore.com:438018657693": _state_record(
             "https://www.disneystore.com/xyz-438018657693.html",
@@ -78,6 +82,7 @@ def test_items_roundtrip_via_state_dict(tmp_path: Path) -> None:
     assert a["price"] == "$9.99"
     assert a["availability_message"] == "Low Stock"
     assert a["available"] is True
+    assert a["in_stock_allocation"] == 12
 
     b = items_out["disneystore.com:438018657693"]
     assert b["status"] == 1
