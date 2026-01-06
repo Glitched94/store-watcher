@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Optional, Pattern, Set
-from urllib.parse import urljoin
+from typing import Any, Dict, Iterable, List, Optional, Pattern, Set
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -142,6 +142,53 @@ class SFCCGridAdapter(Adapter):
     ) -> Iterable[Item]:
         seen_codes: Set[str] = set()
         max_pages = 10  # safety cap
+        details_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+
+        def _build_variation_url(u: str, code: str) -> str:
+            sp = urlsplit(u)
+            root = urlunsplit((sp.scheme or "https", sp.netloc, "", "", ""))
+            path = (
+                "/on/demandware.store/Sites-shopDisney-Site/default/"
+                f"Product-Variation?pid={code}&quantity=1"
+            )
+            return urljoin(root, path)
+
+        def _fetch_variation(code: str) -> Optional[Dict[str, Any]]:
+            if code in details_cache:
+                return details_cache[code]
+
+            detail_url = _build_variation_url(url, code)
+            try:
+                r = session.get(detail_url, timeout=20)
+                r.raise_for_status()
+                payload = r.json()
+            except Exception:
+                details_cache[code] = None
+                return None
+
+            parsed = _parse_variation_payload(payload)
+            details_cache[code] = parsed
+            return parsed
+
+        def _enrich(item: Item) -> Item:
+            # Fetch structured availability + images from the Product-Variation endpoint
+            details = _fetch_variation(item.code)
+            if not details:
+                return item
+
+            if details.get("image"):
+                item.image = tune_image_url(str(details["image"]), size=768, quality=100)
+            if details.get("url"):
+                item.url = canonicalize(urljoin(url, str(details["url"])))
+            if details.get("title") and not item.title:
+                item.title = str(details["title"])
+            if details.get("price"):
+                item.price = str(details["price"])
+            if details.get("available") is not None:
+                item.available = bool(details["available"])
+            if details.get("availability_message"):
+                item.availability = str(details["availability_message"])
+            return item
 
         def _set_page(u: str, page_idx: int) -> str:
             # Many SFCC grids accept start= & sz=; page_idx starts at 1.
@@ -212,7 +259,7 @@ class SFCCGridAdapter(Adapter):
 
         # Page 1
         for it in _iter_page(url):
-            yield it
+            yield _enrich(it)
 
         # Additional pages (best effort; some regions may ignore)
         page = 2
@@ -222,5 +269,89 @@ class SFCCGridAdapter(Adapter):
             if not batch:
                 break
             for it in batch:
-                yield it
+                yield _enrich(it)
             page += 1
+
+
+def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract useful fields from a Product-Variation response.
+    Returns keys: available (bool|None), availability_message (str|None), image (str|None),
+    url (str|None), title (str|None), price (str|None)
+    """
+    product = payload.get("product") or {}
+
+    availability_data = product.get("availability") or {}
+    messages = availability_data.get("messages") or []
+    message: Optional[str] = None
+    if isinstance(messages, list) and messages:
+        first = messages[0]
+        if isinstance(first, str):
+            message = first.strip() or None
+
+    available_raw = product.get("available")
+    available: Optional[bool]
+    if isinstance(available_raw, bool):
+        available = available_raw
+    else:
+        available = None
+
+    if message is None and isinstance(availability_data.get("displayLowStockMessage"), bool):
+        if availability_data.get("displayLowStockMessage"):
+            message = "Low Stock"
+        elif available is False:
+            message = "Out of Stock"
+
+    # Prefer the feature media (includes tuned imgSrc values)
+    image: Optional[str] = None
+    product_media = payload.get("productMedia") or {}
+    feature = product_media.get("feature") or {}
+    feature_images = feature.get("images") or []
+    if isinstance(feature_images, list):
+        for img in feature_images:
+            if not isinstance(img, dict):
+                continue
+            image = img.get("imgSrc") or img.get("url")
+            if image:
+                title = img.get("title") or img.get("alt")
+                break
+        else:
+            title = None
+    else:
+        title = None
+
+    # Fallback to product.images.highRes
+    if image is None:
+        imgs = (product.get("images") or {}).get("highRes") or []
+        if isinstance(imgs, list):
+            for img in imgs:
+                if not isinstance(img, dict):
+                    continue
+                image = img.get("imgSrc") or img.get("url")
+                if image and not title:
+                    title = img.get("title") or img.get("alt")
+                if image:
+                    break
+
+    # Use the structured display name if available
+    if not title:
+        custom = product.get("custom") or {}
+        prod_name = custom.get("productDisplayName")
+        if isinstance(prod_name, str) and prod_name.strip():
+            title = prod_name.strip()
+
+    price_data = (product.get("price") or {}).get("sales") or {}
+    price = price_data.get("formatted") if isinstance(price_data, dict) else None
+
+    product_url = product.get("selectedProductUrl")
+    if not isinstance(product_url, str):
+        product_url = None
+
+    return {
+        "available": available,
+        "availability_message": message,
+        "image": image,
+        "url": product_url,
+        "title": title,
+        "price": price,
+    }
