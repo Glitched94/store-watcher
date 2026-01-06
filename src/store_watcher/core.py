@@ -62,11 +62,12 @@ def _make_present_record(
     name: str | None = None,
     host: str | None = None,
     image: str | None = None,
+    status: int = 1,
 ) -> Dict[str, Any]:
     rec: Dict[str, Any] = {
         "url": url,
         "first_seen": now_iso,
-        "status": 1,
+        "status": status,
         "status_since": now_iso,
     }
     if name:
@@ -168,15 +169,19 @@ def run_watcher(
         url_for_key: dict[str, str] = {}
         name_for_key: dict[str, str] = {}
         image_for_key: dict[str, str] = {}
+        availability_for_key: dict[str, Optional[bool]] = {}
 
         # fetch current items
         items_iter: Iterable[Item] = adapter.fetch(
             session=session, url=url, include_rx=include_rx, exclude_rx=exclude_rx
         )
         for it in items_iter:
-            site_current_count += 1
             key = f"{managed_host}:{it.code}"
             present_keys.add(key)
+            is_available = it.available
+            if is_available is not False:
+                site_current_count += 1
+            availability_for_key[key] = is_available
             if it.url:
                 url_for_key[key] = it.url
             if it.title:
@@ -202,6 +207,7 @@ def run_watcher(
             preferred_url = url_for_key.get(key, state.get(key, {}).get("url", ""))
             preferred_name = name_for_key.get(key) or state.get(key, {}).get("name")
             preferred_img = image_for_key.get(key, state.get(key, {}).get("image", ""))
+            preferred_available = availability_for_key.get(key, True)
 
             if key not in state:
                 rec = _make_present_record(
@@ -210,6 +216,7 @@ def run_watcher(
                     preferred_name,
                     host=managed_host,
                     image=preferred_img or None,
+                    status=1 if preferred_available is not False else 0,
                 )
                 state[key] = rec
                 site_new.setdefault(label, []).append(key)
@@ -222,14 +229,19 @@ def run_watcher(
                 if preferred_img and not info.get("image"):
                     info["image"] = preferred_img
                 info.setdefault("host", managed_host)
-                if info.get("status", 0) == 0:
-                    absent_since = iso_to_dt(info.get("status_since", now_iso))
-                    if now_dt - absent_since >= restock_delta:
-                        site_restocked.setdefault(label, []).append(key)
-                    info["status"] = 1
-                    info["status_since"] = now_iso
+                if preferred_available is False:
+                    if info.get("status", 0) != 0:
+                        info["status_since"] = now_iso
+                    info["status"] = 0
                 else:
-                    info["status"] = 1
+                    if info.get("status", 0) == 0:
+                        absent_since = iso_to_dt(info.get("status_since", now_iso))
+                        if now_dt - absent_since >= restock_delta:
+                            site_restocked.setdefault(label, []).append(key)
+                        info["status"] = 1
+                        info["status_since"] = now_iso
+                    else:
+                        info["status"] = 1
 
         # persist (SQLite only)
         save_items(state, Path(state_db))

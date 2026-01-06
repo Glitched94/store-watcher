@@ -13,6 +13,8 @@ class Item:
     title: Optional[str] = None
     price: Optional[str] = None
     image: Optional[str] = None
+    available: Optional[bool] = None
+    availability: Optional[str] = None
 
 
 class Adapter:
