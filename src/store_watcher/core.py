@@ -62,6 +62,9 @@ def _make_present_record(
     name: str | None = None,
     host: str | None = None,
     image: str | None = None,
+    price: str | None = None,
+    availability_message: str | None = None,
+    available: bool | None = None,
     status: int = 1,
 ) -> Dict[str, Any]:
     rec: Dict[str, Any] = {
@@ -76,6 +79,12 @@ def _make_present_record(
         rec["host"] = host
     if image:
         rec["image"] = image
+    if price:
+        rec["price"] = price
+    if availability_message:
+        rec["availability_message"] = availability_message
+    if available is not None:
+        rec["available"] = available
     return rec
 
 
@@ -169,7 +178,9 @@ def run_watcher(
         url_for_key: dict[str, str] = {}
         name_for_key: dict[str, str] = {}
         image_for_key: dict[str, str] = {}
-        availability_for_key: dict[str, Optional[bool]] = {}
+        price_for_key: dict[str, str] = {}
+        availability_message_for_key: dict[str, str] = {}
+        available_for_key: dict[str, Optional[bool]] = {}
 
         # fetch current items
         items_iter: Iterable[Item] = adapter.fetch(
@@ -181,7 +192,7 @@ def run_watcher(
             is_available = it.available
             if is_available is not False:
                 site_current_count += 1
-            availability_for_key[key] = is_available
+            available_for_key[key] = is_available
             if it.url:
                 url_for_key[key] = it.url
             if it.title:
@@ -192,6 +203,10 @@ def run_watcher(
                     name_for_key[key] = fallback
             if it.image:
                 image_for_key[key] = it.image
+            if it.price:
+                price_for_key[key] = it.price
+            if it.availability:
+                availability_message_for_key[key] = it.availability
 
         # mark absences (only for our host)
         for key, info in state.items():
@@ -207,7 +222,13 @@ def run_watcher(
             preferred_url = url_for_key.get(key, state.get(key, {}).get("url", ""))
             preferred_name = name_for_key.get(key) or state.get(key, {}).get("name")
             preferred_img = image_for_key.get(key, state.get(key, {}).get("image", ""))
-            preferred_available = availability_for_key.get(key, True)
+            preferred_price = price_for_key.get(key) or state.get(key, {}).get("price")
+            preferred_availability_msg = availability_message_for_key.get(key) or state.get(
+                key, {}
+            ).get("availability_message")
+            preferred_available = available_for_key.get(
+                key, state.get(key, {}).get("available", True)
+            )
 
             if key not in state:
                 rec = _make_present_record(
@@ -216,6 +237,9 @@ def run_watcher(
                     preferred_name,
                     host=managed_host,
                     image=preferred_img or None,
+                    price=preferred_price,
+                    availability_message=preferred_availability_msg,
+                    available=preferred_available if preferred_available is not None else None,
                     status=1 if preferred_available is not False else 0,
                 )
                 state[key] = rec
@@ -228,6 +252,14 @@ def run_watcher(
                     info["name"] = preferred_name
                 if preferred_img and not info.get("image"):
                     info["image"] = preferred_img
+                if preferred_price and preferred_price != info.get("price"):
+                    info["price"] = preferred_price
+                if preferred_availability_msg and preferred_availability_msg != info.get(
+                    "availability_message"
+                ):
+                    info["availability_message"] = preferred_availability_msg
+                if preferred_available is not None or info.get("available") is not None:
+                    info["available"] = preferred_available
                 info.setdefault("host", managed_host)
                 if preferred_available is False:
                     if info.get("status", 0) != 0:
