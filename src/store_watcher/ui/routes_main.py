@@ -599,7 +599,13 @@ async def state_endpoint(
         from urllib.parse import urlencode
 
         params = dict(
-            region=region, q=q, view=view, stock=stock, sort=sort, page=page + 1, page_size=page_size
+            region=region,
+            q=q,
+            view=view,
+            stock=stock,
+            sort=sort,
+            page=page + 1,
+            page_size=page_size,
         )
         url_more = "/api/state?" + urlencode(params)
         more = f'<div class="col-span-full h-0 p-0 m-0" hx-get="{url_more}" hx-trigger="revealed" hx-swap="outerHTML"></div>'
