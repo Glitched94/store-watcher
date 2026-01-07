@@ -343,8 +343,8 @@ def run_watcher(
                 continue
             info_detail: Dict[str, Any] = detail_record
 
-            prev_status = int(info.get("status", 0))
-            prev_status_since_raw = info.get("status_since", now_iso)
+            prev_status = int(info_detail.get("status", 0))
+            prev_status_since_raw = info_detail.get("status_since", now_iso)
             prev_status_since = (
                 iso_to_dt(prev_status_since_raw) if prev_status_since_raw else now_dt
             )
