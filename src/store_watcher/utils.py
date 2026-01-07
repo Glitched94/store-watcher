@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import html as _html
+import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
@@ -182,7 +184,14 @@ def tune_image_url(url: str, *, size: int = 768, quality: int = 100) -> str:
 
 
 def make_session() -> requests.Session:
-    s = requests.Session()
+    rate_limit_per_min = int(os.getenv("RATE_LIMIT_PER_MIN", "30") or "30")
+    burst = int(os.getenv("RATE_LIMIT_BURST", "5") or "5")
+    limiter: RateLimiter | None
+    if rate_limit_per_min <= 0:
+        limiter = None
+    else:
+        limiter = RateLimiter(rate_limit_per_min / 60.0, max(1, burst))
+    s = RateLimitedSession(limiter)
     s.headers.update({"User-Agent": "Mozilla/5.0 (compatible; StoreWatcher/3.1)"})
     retries = Retry(
         total=3,
@@ -194,6 +203,46 @@ def make_session() -> requests.Session:
     s.mount("https://", HTTPAdapter(max_retries=retries))
     s.mount("http://", HTTPAdapter(max_retries=retries))
     return s
+
+
+class RateLimiter:
+    def __init__(self, rate_per_sec: float, burst: int) -> None:
+        self.rate_per_sec = max(0.0, rate_per_sec)
+        self.capacity = max(1, burst)
+        self.tokens = float(self.capacity)
+        self.updated_at = time.monotonic()
+
+    def acquire(self) -> None:
+        if self.rate_per_sec <= 0:
+            return
+        now = time.monotonic()
+        elapsed = now - self.updated_at
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.rate_per_sec)
+        self.updated_at = now
+        if self.tokens >= 1.0:
+            self.tokens -= 1.0
+            return
+        needed = 1.0 - self.tokens
+        wait = needed / self.rate_per_sec if self.rate_per_sec > 0 else 0.0
+        if wait > 0:
+            time.sleep(wait)
+        now = time.monotonic()
+        elapsed = now - self.updated_at
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.rate_per_sec)
+        self.updated_at = now
+        if self.tokens >= 1.0:
+            self.tokens -= 1.0
+
+
+class RateLimitedSession(requests.Session):
+    def __init__(self, limiter: RateLimiter | None) -> None:
+        super().__init__()
+        self._limiter = limiter
+
+    def request(self, *args: Any, **kwargs: Any) -> requests.Response:
+        if self._limiter is not None:
+            self._limiter.acquire()
+        return super().request(*args, **kwargs)
 
 
 # ---------- Misc ----------
