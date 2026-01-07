@@ -116,13 +116,47 @@ def _make_present_record(
         rec["image"] = image
     if price:
         rec["price"] = price
+    rec["price_changed"] = False
     if availability_message:
         rec["availability_message"] = availability_message
+    rec["availability_changed"] = False
     if available is not None:
         rec["available"] = available
     if in_stock_allocation is not None:
         rec["in_stock_allocation"] = in_stock_allocation
     return rec
+
+
+def _apply_change_tracking(
+    info: Dict[str, Any],
+    *,
+    price: str | None = None,
+    availability_message: str | None = None,
+    available: bool | None = None,
+) -> None:
+    price_changed = False
+    if price:
+        current_price = info.get("price")
+        if price != current_price:
+            info["prev_price"] = current_price or ""
+            info["price"] = price
+            price_changed = True
+    info["price_changed"] = price_changed
+
+    availability_changed = False
+    if availability_message:
+        current_message = info.get("availability_message")
+        if availability_message != current_message:
+            info["prev_availability_message"] = current_message or ""
+            info["availability_message"] = availability_message
+            availability_changed = True
+    if available is not None:
+        current_available = info.get("available")
+        if available != current_available:
+            info["prev_available"] = current_available
+            info["available"] = available
+            availability_changed = True
+    info["availability_changed"] = availability_changed
 
 
 def _migrate_keys_to_composite(
@@ -300,14 +334,12 @@ def run_watcher(
                     info["name"] = preferred_name
                 if preferred_img and not info.get("image"):
                     info["image"] = preferred_img
-                if preferred_price and preferred_price != info.get("price"):
-                    info["price"] = preferred_price
-                if preferred_availability_msg and preferred_availability_msg != info.get(
-                    "availability_message"
-                ):
-                    info["availability_message"] = preferred_availability_msg
-                if preferred_available is not None or info.get("available") is not None:
-                    info["available"] = preferred_available
+                _apply_change_tracking(
+                    info,
+                    price=preferred_price,
+                    availability_message=preferred_availability_msg,
+                    available=preferred_available,
+                )
                 if preferred_allocation is not None:
                     info["in_stock_allocation"] = preferred_allocation
                 info.setdefault("host", managed_host)
@@ -355,12 +387,12 @@ def run_watcher(
                 info_detail["name"] = detail_item.title
             if detail_item.image and not info_detail.get("image"):
                 info_detail["image"] = detail_item.image
-            if detail_item.price:
-                info_detail["price"] = detail_item.price
-            if detail_item.availability:
-                info_detail["availability_message"] = detail_item.availability
-            if detail_item.available is not None:
-                info_detail["available"] = detail_item.available
+            _apply_change_tracking(
+                info_detail,
+                price=detail_item.price,
+                availability_message=detail_item.availability,
+                available=detail_item.available,
+            )
             if detail_item.in_stock_allocation is not None:
                 info_detail["in_stock_allocation"] = detail_item.in_stock_allocation
 
