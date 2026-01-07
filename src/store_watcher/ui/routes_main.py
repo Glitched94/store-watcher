@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Query
@@ -193,10 +194,10 @@ async def index(request: Request) -> HTMLResponse:
             hx-swap="innerHTML"
             hx-push-url="true"
             hx-trigger="submit, keyup changed delay:300ms from:input, change from:select, change from:input[name='view']">
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-            <div class="md:col-span-2">
-              <label class="block text-xs text-slate-400">Region</label>
-              <select name="region"
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div class="md:col-span-2">
+                <label class="block text-xs text-slate-400">Region</label>
+                <select name="region"
                       class="w-full bg-slate-900/70 backdrop-blur chip rounded px-2 py-1
                              focus:outline-none focus:ring-2 focus:ring-cyan-500/40">
                 <option value="all">All</option>
@@ -222,6 +223,27 @@ async def index(request: Request) -> HTMLResponse:
                   <span>List</span>
                 </label>
               </div>
+            </div>
+            <div class="md:col-span-3">
+              <label class="block text-xs text-slate-400">Stock</label>
+              <select name="stock"
+                      class="w-full bg-slate-900/70 backdrop-blur chip rounded px-2 py-1
+                             focus:outline-none focus:ring-2 focus:ring-cyan-500/40">
+                <option value="all">All</option>
+                <option value="in">In stock</option>
+                <option value="out">Out of stock</option>
+              </select>
+            </div>
+            <div class="md:col-span-3">
+              <label class="block text-xs text-slate-400">Sort</label>
+              <select name="sort"
+                      class="w-full bg-slate-900/70 backdrop-blur chip rounded px-2 py-1
+                             focus:outline-none focus:ring-2 focus:ring-cyan-500/40">
+                <option value="newest">Newest</option>
+                <option value="restocked">Recently restocked</option>
+                <option value="price_asc">Price (low to high)</option>
+                <option value="price_desc">Price (high to low)</option>
+              </select>
             </div>
             <div class="md:col-span-1">
               <button class="w-full btn-primary">Filter</button>
@@ -285,8 +307,12 @@ async def index(request: Request) -> HTMLResponse:
           const q = params.get('q') || '';
           const region = params.get('region') || 'all';
           const view = params.get('view') || 'grid';
+          const stock = params.get('stock') || 'all';
+          const sort = params.get('sort') || 'newest';
           document.querySelector('input[name="q"]').value = q;
           document.querySelector('select[name="region"]').value = region;
+          document.querySelector('select[name="stock"]').value = stock;
+          document.querySelector('select[name="sort"]').value = sort;
           document.querySelectorAll('input[name="view"]').forEach((r) => {{
             r.checked = (r.value === view);
           }});
@@ -442,6 +468,8 @@ async def state_endpoint(
     region: str = Query("all"),
     q: str = Query("", max_length=100),
     view: str = Query("grid"),  # "grid" | "list"
+    stock: str = Query("all"),  # "all" | "in" | "out"
+    sort: str = Query("newest"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=10, le=200),
 ) -> HTMLResponse:
@@ -449,17 +477,85 @@ async def state_endpoint(
 
     region_order: Dict[str, int] = {"US": 0, "EU": 1, "UK": 2, "ASIA": 3, "AU": 4}
 
-    def sort_key(item: Tuple[str, Dict[str, Any]]) -> Tuple[int, int, int]:
+    stock = stock if stock in {"all", "in", "out"} else "all"
+    sort = sort if sort in {"newest", "restocked", "price_asc", "price_desc"} else "newest"
+
+    def _availability_state(v: Dict[str, Any]) -> Optional[str]:
+        status = int(v.get("status", 0))
+        available_raw = v.get("available")
+        if isinstance(available_raw, bool):
+            available: Optional[bool] = available_raw
+        elif available_raw is None:
+            available = None
+        else:
+            try:
+                available = bool(int(available_raw))
+            except Exception:
+                available = None
+
+        if status == 0:
+            return "out"
+        if available is True:
+            return "in"
+        if available is False:
+            return "out"
+        return None
+
+    def _price_value(price: Any) -> Optional[float]:
+        if not price:
+            return None
+        text = str(price)
+        match = re.search(r"([0-9]+(?:[.,][0-9]+)?)", text.replace(",", ""))
+        if not match:
+            return None
+        try:
+            return float(match.group(1))
+        except Exception:
+            return None
+
+    def sort_key(item: Tuple[str, Dict[str, Any]]) -> Tuple[Any, ...]:
         _key, v = item
         lab = site_label((v.get("host") or v.get("url", "")))
-        status = int(v.get("status", 0))
-        since = v.get("status_since") or v.get("first_seen")
-        return (region_order.get(lab, 99), 0 if status == 1 else 1, -_to_ord(since))
+        availability = _availability_state(v)
+        availability_rank = {"in": 0, "out": 1, None: 2}[availability]
+        first_seen_ord = _to_ord(v.get("first_seen") or v.get("status_since"))
+        status_since_ord = _to_ord(v.get("status_since") or v.get("first_seen"))
+        price_val = _price_value(v.get("price"))
+
+        if sort == "price_asc":
+            return (
+                availability_rank,
+                price_val if price_val is not None else float("inf"),
+                -status_since_ord,
+                region_order.get(lab, 99),
+                -first_seen_ord,
+            )
+        if sort == "price_desc":
+            return (
+                availability_rank,
+                -price_val if price_val is not None else float("inf"),
+                -status_since_ord,
+                region_order.get(lab, 99),
+                -first_seen_ord,
+            )
+        if sort == "restocked":
+            return (
+                availability_rank,
+                -status_since_ord,
+                region_order.get(lab, 99),
+                -first_seen_ord,
+            )
+        return (
+            availability_rank,
+            -first_seen_ord,
+            region_order.get(lab, 99),
+            -status_since_ord,
+        )
 
     # filter & sort
     ql = q.strip().lower()
-    items_sorted: List[Tuple[str, Dict[str, Any]]] = []
-    for kv in sorted(state.items(), key=sort_key):
+    items_filtered: List[Tuple[str, Dict[str, Any]]] = []
+    for kv in state.items():
         key, v = kv
         lab = site_label((v.get("host") or v.get("url", "")))
         if region.lower() != "all" and lab != region:
@@ -469,7 +565,14 @@ async def state_endpoint(
         url = v.get("url") or ""
         if ql and (ql not in name.lower() and ql not in code and ql not in url.lower()):
             continue
-        items_sorted.append(kv)
+        availability = _availability_state(v)
+        if stock == "in" and availability != "in":
+            continue
+        if stock == "out" and availability != "out":
+            continue
+        items_filtered.append(kv)
+
+    items_sorted = sorted(items_filtered, key=sort_key)
 
     total = len(items_sorted)
     start = (page - 1) * page_size
@@ -495,7 +598,9 @@ async def state_endpoint(
     if end < total:
         from urllib.parse import urlencode
 
-        params = dict(region=region, q=q, view=view, page=page + 1, page_size=page_size)
+        params = dict(
+            region=region, q=q, view=view, stock=stock, sort=sort, page=page + 1, page_size=page_size
+        )
         url_more = "/api/state?" + urlencode(params)
         more = f'<div class="col-span-full h-0 p-0 m-0" hx-get="{url_more}" hx-trigger="revealed" hx-swap="outerHTML"></div>'
 
