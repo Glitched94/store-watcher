@@ -517,6 +517,7 @@ async def state_endpoint(
     q: str = Query("", max_length=100),
     view: str = Query("grid"),  # "grid" | "list"
     stock: str = Query("all"),  # "all" | "in" | "out"
+    changes: str = Query("all"),  # "all" | "price" | "availability"
     sort: str = Query("newest"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=10, le=200),
@@ -527,7 +528,20 @@ async def state_endpoint(
     region_order: Dict[str, int] = {"US": 0, "EU": 1, "UK": 2, "ASIA": 3, "AU": 4}
 
     stock = stock if stock in {"all", "in", "out"} else "all"
-    sort = sort if sort in {"newest", "restocked", "price_asc", "price_desc"} else "newest"
+    changes = changes if changes in {"all", "price", "availability"} else "all"
+    sort = (
+        sort
+        if sort
+        in {
+            "newest",
+            "restocked",
+            "price_asc",
+            "price_desc",
+            "price_changed",
+            "availability_changed",
+        }
+        else "newest"
+    )
 
     def _price_value(price: Any) -> Optional[float]:
         if not price:
@@ -549,6 +563,8 @@ async def state_endpoint(
         first_seen_ord = _to_ord(v.get("first_seen") or v.get("status_since"))
         status_since_ord = _to_ord(v.get("status_since") or v.get("first_seen"))
         price_val = _price_value(v.get("price"))
+        price_changed = bool(v.get("price_changed"))
+        availability_changed = bool(v.get("availability_changed"))
 
         if sort == "price_asc":
             return (
@@ -568,6 +584,22 @@ async def state_endpoint(
             )
         if sort == "restocked":
             return (
+                availability_rank,
+                -status_since_ord,
+                region_order.get(lab, 99),
+                -first_seen_ord,
+            )
+        if sort == "price_changed":
+            return (
+                0 if price_changed else 1,
+                availability_rank,
+                -status_since_ord,
+                region_order.get(lab, 99),
+                -first_seen_ord,
+            )
+        if sort == "availability_changed":
+            return (
+                0 if availability_changed else 1,
                 availability_rank,
                 -status_since_ord,
                 region_order.get(lab, 99),
@@ -597,6 +629,10 @@ async def state_endpoint(
         if stock == "in" and availability is not True:
             continue
         if stock == "out" and availability is not False:
+            continue
+        if changes == "price" and not v.get("price_changed"):
+            continue
+        if changes == "availability" and not v.get("availability_changed"):
             continue
         items_filtered.append(kv)
 
@@ -673,6 +709,7 @@ async def state_endpoint(
             q=q,
             view=view,
             stock=stock,
+            changes=changes,
             sort=sort,
             page=page + 1,
             page_size=page_size,

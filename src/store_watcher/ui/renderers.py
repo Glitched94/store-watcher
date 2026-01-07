@@ -148,6 +148,20 @@ def _card_grid(
                 "Restocked",
             )
         )
+    if v.get("price_changed"):
+        pill_items.append(
+            _pill(
+                "bg-amber-500/15 text-amber-200 border-amber-500/30 shadow-[0_0_18px_rgba(245,158,11,0.12)]",
+                "Price updated",
+            )
+        )
+    if v.get("availability_changed"):
+        pill_items.append(
+            _pill(
+                "bg-violet-500/15 text-violet-200 border-violet-500/30 shadow-[0_0_18px_rgba(139,92,246,0.12)]",
+                "Message updated",
+            )
+        )
 
     img = v.get("image") or ""
     if img:
@@ -235,6 +249,20 @@ def _row_list(
             _pill(
                 "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_18px_rgba(16,185,129,0.15)]",
                 "Restocked",
+            )
+        )
+    if v.get("price_changed"):
+        pill_items.append(
+            _pill(
+                "bg-amber-500/15 text-amber-200 border-amber-500/30 shadow-[0_0_18px_rgba(245,158,11,0.12)]",
+                "Price updated",
+            )
+        )
+    if v.get("availability_changed"):
+        pill_items.append(
+            _pill(
+                "bg-violet-500/15 text-violet-200 border-violet-500/30 shadow-[0_0_18px_rgba(139,92,246,0.12)]",
+                "Message updated",
             )
         )
     price_html = (
