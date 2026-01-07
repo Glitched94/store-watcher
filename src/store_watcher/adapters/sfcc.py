@@ -373,9 +373,20 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(first, str):
             message = first.strip() or None
 
+    stock_allocation_raw = availability_data.get("inStockAllocation")
+    stock_allocation: Optional[int]
+    if isinstance(stock_allocation_raw, int):
+        stock_allocation = stock_allocation_raw
+    elif isinstance(stock_allocation_raw, str) and stock_allocation_raw.isdigit():
+        stock_allocation = int(stock_allocation_raw)
+    else:
+        stock_allocation = None
+
     available_raw = product.get("available")
     available: Optional[bool]
-    if isinstance(available_raw, bool):
+    if stock_allocation is not None:
+        available = stock_allocation > 0
+    elif isinstance(available_raw, bool):
         available = available_raw
     else:
         available = None
@@ -430,15 +441,6 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     product_url = product.get("selectedProductUrl")
     if not isinstance(product_url, str):
         product_url = None
-
-    stock_allocation_raw = availability_data.get("inStockAllocation")
-    if isinstance(stock_allocation_raw, (int, float)):
-        try:
-            stock_allocation = int(stock_allocation_raw)
-        except Exception:
-            stock_allocation = None
-    else:
-        stock_allocation = None
 
     return {
         "available": available,
