@@ -13,6 +13,54 @@ from .renderers import _card_grid, _row_list
 router = APIRouter()
 
 
+def _availability_state(v: Dict[str, Any]) -> Optional[bool]:
+    availability_message = (v.get("availability_message") or "").strip()
+    available_raw = v.get("available")
+    if isinstance(available_raw, bool):
+        available: Optional[bool] = available_raw
+    elif available_raw is None:
+        available = None
+    else:
+        try:
+            available = bool(int(available_raw))
+        except Exception:
+            available = None
+
+    lowered = availability_message.lower()
+    if "low" in lowered:
+        return True
+
+    in_stock_allocation_raw = v.get("in_stock_allocation")
+    if isinstance(in_stock_allocation_raw, int):
+        in_stock_allocation: Optional[int] = in_stock_allocation_raw
+    elif in_stock_allocation_raw is None:
+        in_stock_allocation = None
+    else:
+        try:
+            in_stock_allocation = int(in_stock_allocation_raw)
+        except Exception:
+            in_stock_allocation = None
+
+    if in_stock_allocation is not None:
+        return in_stock_allocation > 0
+
+    if available is True:
+        return True
+    if available is False:
+        return False
+
+    if "out" in lowered or "unavailable" in lowered or "sold out" in lowered:
+        return False
+    if "in stock" in lowered or "available" in lowered:
+        return True
+
+    status = int(v.get("status", 0))
+    if status == 0:
+        return False
+
+    return None
+
+
 def _header_controls_html(user: Optional[dict[str, Any]]) -> str:
     if user:
         # Authenticated: show Settings, Notifications, and Logout
@@ -440,7 +488,7 @@ async def summary() -> HTMLResponse:
     state = _load_state_any()
     totals: Dict[str, int] = {}
     for _key, v in state.items():
-        if int(v.get("status", 0)) != 1:
+        if _availability_state(v) is not True:
             continue
         host = v.get("host") or ""
         label = site_label(host or v.get("url", ""))
@@ -481,27 +529,6 @@ async def state_endpoint(
     stock = stock if stock in {"all", "in", "out"} else "all"
     sort = sort if sort in {"newest", "restocked", "price_asc", "price_desc"} else "newest"
 
-    def _availability_state(v: Dict[str, Any]) -> Optional[str]:
-        status = int(v.get("status", 0))
-        available_raw = v.get("available")
-        if isinstance(available_raw, bool):
-            available: Optional[bool] = available_raw
-        elif available_raw is None:
-            available = None
-        else:
-            try:
-                available = bool(int(available_raw))
-            except Exception:
-                available = None
-
-        if status == 0:
-            return "out"
-        if available is True:
-            return "in"
-        if available is False:
-            return "out"
-        return None
-
     def _price_value(price: Any) -> Optional[float]:
         if not price:
             return None
@@ -518,7 +545,7 @@ async def state_endpoint(
         _key, v = item
         lab = site_label((v.get("host") or v.get("url", "")))
         availability = _availability_state(v)
-        availability_rank = {"in": 0, "out": 1, None: 2}[availability]
+        availability_rank = {True: 0, False: 1, None: 2}[availability]
         first_seen_ord = _to_ord(v.get("first_seen") or v.get("status_since"))
         status_since_ord = _to_ord(v.get("status_since") or v.get("first_seen"))
         price_val = _price_value(v.get("price"))
@@ -567,9 +594,9 @@ async def state_endpoint(
         if ql and (ql not in name.lower() and ql not in code and ql not in url.lower()):
             continue
         availability = _availability_state(v)
-        if stock == "in" and availability != "in":
+        if stock == "in" and availability is not True:
             continue
-        if stock == "out" and availability != "out":
+        if stock == "out" and availability is not False:
             continue
         items_filtered.append(kv)
 
