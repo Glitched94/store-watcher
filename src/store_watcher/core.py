@@ -250,6 +250,15 @@ def run_watcher(
                 availability_message_for_key[key] = it.availability
             allocation_for_key[key] = it.in_stock_allocation
 
+        host_known_items = any(k.split(":", 1)[0] == managed_host for k in state)
+        if not present_keys and host_known_items:
+            print(
+                "[warn] No items returned for {}, skipping status updates this tick".format(
+                    managed_host
+                )
+            )
+            return
+
         # mark absences (only for our host)
         for key, info in state.items():
             key_host = key.split(":", 1)[0]
@@ -306,7 +315,7 @@ def run_watcher(
                     "availability_message"
                 ):
                     info["availability_message"] = preferred_availability_msg
-                if preferred_available is not None or info.get("available") is not None:
+                if preferred_available is not None:
                     info["available"] = preferred_available
                 if preferred_allocation is not None:
                     info["in_stock_allocation"] = preferred_allocation
@@ -315,7 +324,7 @@ def run_watcher(
                     if info.get("status", 0) != 0:
                         info["status_since"] = now_iso
                     info["status"] = 0
-                else:
+                elif preferred_available is True:
                     if info.get("status", 0) == 0:
                         absent_since = iso_to_dt(info.get("status_since", now_iso))
                         if now_dt - absent_since >= restock_delta:
@@ -343,8 +352,8 @@ def run_watcher(
                 continue
             info_detail: Dict[str, Any] = detail_record
 
-            prev_status = int(info.get("status", 0))
-            prev_status_since_raw = info.get("status_since", now_iso)
+            prev_status = int(info_detail.get("status", 0))
+            prev_status_since_raw = info_detail.get("status_since", now_iso)
             prev_status_since = (
                 iso_to_dt(prev_status_since_raw) if prev_status_since_raw else now_dt
             )
