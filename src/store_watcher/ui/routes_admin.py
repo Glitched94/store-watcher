@@ -124,7 +124,7 @@ async def admin_listeners(user: UserDep) -> HTMLResponse:
             <td class="px-2 py-1 text-slate-400 text-sm">{display}</td>
             <td class="px-2 py-1">
                 <button hx-post="/admin/listeners/toggle?id={listener.id}" hx-swap="outerHTML"
-                        class="px-2 py-0.5 rounded text-xs {'bg-emerald-600' if listener.enabled else 'bg-slate-700'}">
+                        class="px-2 py-0.5 rounded text-xs {"bg-emerald-600" if listener.enabled else "bg-slate-700"}">
                 {"Enabled" if listener.enabled else "Disabled"}
                 </button>
                 <button hx-delete="/admin/listeners?id={listener.id}" hx-target="closest tr" hx-swap="outerHTML"
@@ -286,7 +286,7 @@ async def admin_listeners_toggle(user: UserDep, id: int = Query(...)) -> HTMLRes
     set_listener_enabled(dbp, id, not m.enabled, user_id=user["id"])
     return HTMLResponse(
         f"""<button hx-post="/admin/listeners/toggle?id={id}" hx-swap="outerHTML"
-        class="px-2 py-0.5 rounded text-xs {'bg-emerald-600' if not m.enabled else 'bg-slate-700'}">
+        class="px-2 py-0.5 rounded text-xs {"bg-emerald-600" if not m.enabled else "bg-slate-700"}">
         {"Enabled" if not m.enabled else "Disabled"}</button>"""
     )
 

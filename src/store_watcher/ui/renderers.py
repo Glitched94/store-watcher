@@ -185,7 +185,7 @@ def _card_grid(
         <div class="flex items-center justify-between gap-2">
           <div class="text-xs text-slate-400">[{lab}] {code}</div>
           <div class="flex flex-wrap items-center gap-2">
-            {''.join(pill_items)}
+            {"".join(pill_items)}
             <span class="text-[11px] px-2 py-0.5 rounded-full border {chip_cls} whitespace-nowrap">{chip_txt}</span>
           </div>
         </div>
@@ -198,8 +198,8 @@ def _card_grid(
           {f'<span class="text-xs text-slate-400">Stock: {v.get("in_stock_allocation")}</span>' if v.get("in_stock_allocation") is not None and not (availability_message and str(v.get("in_stock_allocation")) in availability_message) else ""}
         </div>
         <div class="mt-auto pt-3 text-xs text-slate-400 space-y-1">
-          <div>First seen {first_seen or '?'} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
-          <div>Status since {since or '?'} <span class="ml-1 text-slate-500">{status_since_text}</span></div>
+          <div>First seen {first_seen or "?"} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
+          <div>Status since {since or "?"} <span class="ml-1 text-slate-500">{status_since_text}</span></div>
         </div>
       </div>
     </div>
@@ -289,15 +289,15 @@ def _row_list(
           <div class="min-w-0 space-y-1">
             <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
               <span>[{lab}] {code}</span>
-              {''.join(pill_items)}
+              {"".join(pill_items)}
             </div>
             <a class="mt-1 block text-base font-medium link-neon break-words" href="{url}">
               {name or url}
             </a>
             {availability_line}
             <div class="mt-1 text-xs text-slate-400 space-y-1">
-              <div>First seen {first_seen or '?'} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
-              <div>Status since {since or '?'} <span class="ml-1 text-slate-500">{status_since_text}</span></div>
+              <div>First seen {first_seen or "?"} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
+              <div>Status since {since or "?"} <span class="ml-1 text-slate-500">{status_since_text}</span></div>
             </div>
           </div>
           <div class="flex flex-col items-end gap-2">

@@ -70,7 +70,7 @@ def state_cmd(
             if url:
                 typer.echo(f"    url={url}")
         if len(items) > 20:
-            typer.echo(f"... ({len(items)-20} more)")
+            typer.echo(f"... ({len(items) - 20} more)")
     elif action == "clear":
         if dbp.exists():
             dbp.unlink()

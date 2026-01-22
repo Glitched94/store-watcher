@@ -29,7 +29,6 @@ def test_render_change_digest_basic() -> None:
         new_codes=["disneystore.com:438039197642"],
         restocked_codes=["disneystore.com:438018657693"],
         state=state,
-        restock_hours=24,
         target_url="(multiple)",
         total_count=2,
     )
