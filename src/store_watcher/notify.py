@@ -218,7 +218,7 @@ def render_change_digest(
         html_parts.append("</ul>")
     if restocked_codes:
         html_parts.append(
-            f"<p><strong>Restocked (stock 0 → >0) " f"({len(restocked_codes)}):</strong></p><ul>"
+            f"<p><strong>Restocked (stock 0 → >0) ({len(restocked_codes)}):</strong></p><ul>"
         )
         for key in sorted(restocked_codes):
             _, h, _ = _entry(key)
