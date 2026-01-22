@@ -196,9 +196,7 @@ def save_items(items: Dict[str, Dict[str, Any]], db_path: Path) -> None:
     """
     ensure_item_schema(db_path)
 
-    def _row(
-        key: str, rec: Dict[str, Any]
-    ) -> tuple[
+    def _row(key: str, rec: Dict[str, Any]) -> tuple[
         str,
         str,
         str,
