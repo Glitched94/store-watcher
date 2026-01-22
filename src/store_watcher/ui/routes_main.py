@@ -498,16 +498,14 @@ async def summary() -> HTMLResponse:
     items: List[str] = []
     for lab in labels:
         n = totals.get(lab, 0)
-        items.append(
-            f"""
+        items.append(f"""
             <div class="rounded-2xl p-[1px] glow-edge">
                 <div class="rounded-2xl bg-slate-900/70 backdrop-blur border border-slate-800/60 p-3">
                 <div class="text-slate-400 text-xs">{lab}</div>
                 <div class="text-2xl font-semibold text-slate-100">{n}</div>
                 </div>
             </div>
-            """
-        )
+            """)
     return HTMLResponse("".join(items))
 
 
