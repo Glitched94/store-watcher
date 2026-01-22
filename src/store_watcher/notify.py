@@ -134,7 +134,6 @@ def render_change_digest(
     new_codes: list[str],
     restocked_codes: list[str],
     state: dict[str, dict[str, Any]],
-    restock_hours: int,
     target_url: str,
     total_count: int,
 ) -> tuple[str, str, str]:
@@ -219,8 +218,7 @@ def render_change_digest(
         html_parts.append("</ul>")
     if restocked_codes:
         html_parts.append(
-            f"<p><strong>Restocked (≥{restock_hours}h absent) "
-            f"({len(restocked_codes)}):</strong></p><ul>"
+            f"<p><strong>Restocked (stock 0 → >0) " f"({len(restocked_codes)}):</strong></p><ul>"
         )
         for key in sorted(restocked_codes):
             _, h, _ = _entry(key)
@@ -238,7 +236,7 @@ def render_change_digest(
             text_lines.append(t)
         text_lines.append("")
     if restocked_codes:
-        text_lines.append(f"Restocked (≥{restock_hours}h absent) ({len(restocked_codes)}):")
+        text_lines.append(f"Restocked (stock 0 → >0) ({len(restocked_codes)}):")
         for key in sorted(restocked_codes):
             _, _, t = _entry(key)
             text_lines.append(t)

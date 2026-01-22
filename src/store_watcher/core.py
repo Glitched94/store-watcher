@@ -5,7 +5,6 @@ import re
 import time
 import traceback
 from collections.abc import Iterable
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Pattern
 
@@ -18,7 +17,6 @@ from .db.items import load_items_dict, save_items
 from .notify import build_notifiers_from_db, render_change_digest
 from .utils import (
     domain_of,
-    iso_to_dt,
     make_session,
     pretty_name_from_url,
     site_label,
@@ -159,6 +157,39 @@ def _apply_change_tracking(
     info["availability_changed"] = availability_changed
 
 
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _set_status(info: Dict[str, Any], new_status: int, now_iso: str) -> None:
+    prev_status = int(info.get("status", 0))
+    if new_status != prev_status:
+        info["status_since"] = now_iso
+    info["status"] = new_status
+
+
+def _update_stock_status(info: Dict[str, Any], new_stock: object | None, now_iso: str) -> bool:
+    stock_val = _coerce_int(new_stock)
+    if stock_val is None:
+        return False
+
+    prev_stock = _coerce_int(info.get("in_stock_allocation"))
+    if prev_stock != stock_val:
+        info["in_stock_allocation"] = stock_val
+    else:
+        info.setdefault("in_stock_allocation", stock_val)
+
+    _set_status(info, 1 if stock_val > 0 else 0, now_iso)
+    return prev_stock == 0 and stock_val > 0
+
+
 def _migrate_keys_to_composite(
     state: Dict[str, Dict[str, Any]], default_host: str
 ) -> Dict[str, Dict[str, Any]]:
@@ -213,8 +244,6 @@ def run_watcher(
     default_host = domain_of(url)
     include_rx = _compile(include_re or os.getenv("INCLUDE_RE", "").strip() or None)
     exclude_rx = _compile(exclude_re or os.getenv("EXCLUDE_RE", "").strip() or None)
-    restock_delta = timedelta(hours=restock_hours)
-
     watcher_label = site_label(url)
 
     # ---- Notifiers from DB only ----
@@ -226,7 +255,7 @@ def run_watcher(
         print(f"[info] Include: {include_rx.pattern}")
     if exclude_rx:
         print(f"[info] Exclude: {exclude_rx.pattern}")
-    print(f"[info] Restock window: {restock_hours}h")
+    print("[info] Restock alerts: stock 0 → >0 (no time window)")
     print(f"[info] State backend: sqlite ({state_db})")
 
     # Load current state (SQLite only) and normalize keys
@@ -242,9 +271,7 @@ def run_watcher(
     def tick() -> None:
         nonlocal state
         now_iso = utcnow_iso()
-        now_dt = iso_to_dt(now_iso)
 
-        site_current_count = 0
         site_new: dict[str, list[str]] = {}
         site_restocked: dict[str, list[str]] = {}
 
@@ -253,9 +280,6 @@ def run_watcher(
         name_for_key: dict[str, str] = {}
         image_for_key: dict[str, str] = {}
         price_for_key: dict[str, str] = {}
-        availability_message_for_key: dict[str, str] = {}
-        available_for_key: dict[str, Optional[bool]] = {}
-        allocation_for_key: dict[str, Optional[int]] = {}
 
         # fetch current items
         items_iter: Iterable[Item] = adapter.fetch(
@@ -264,10 +288,6 @@ def run_watcher(
         for it in items_iter:
             key = f"{managed_host}:{it.code}"
             present_keys.add(key)
-            is_available = it.available
-            if is_available is not False:
-                site_current_count += 1
-            available_for_key[key] = is_available
             if it.url:
                 url_for_key[key] = it.url
             if it.title:
@@ -280,18 +300,6 @@ def run_watcher(
                 image_for_key[key] = it.image
             if it.price:
                 price_for_key[key] = it.price
-            if it.availability:
-                availability_message_for_key[key] = it.availability
-            allocation_for_key[key] = it.in_stock_allocation
-
-        # mark absences (only for our host)
-        for key, info in state.items():
-            key_host = key.split(":", 1)[0]
-            if key_host != managed_host:
-                continue
-            if key not in present_keys and info.get("status", 1) == 1:
-                info["status"] = 0
-                info["status_since"] = now_iso
 
         # handle present items
         for key in present_keys:
@@ -299,15 +307,6 @@ def run_watcher(
             preferred_name = name_for_key.get(key) or state.get(key, {}).get("name")
             preferred_img = image_for_key.get(key, state.get(key, {}).get("image", ""))
             preferred_price = price_for_key.get(key) or state.get(key, {}).get("price")
-            preferred_availability_msg = availability_message_for_key.get(key) or state.get(
-                key, {}
-            ).get("availability_message")
-            preferred_available = available_for_key.get(
-                key, state.get(key, {}).get("available", True)
-            )
-            preferred_allocation = allocation_for_key.get(
-                key, state.get(key, {}).get("in_stock_allocation")
-            )
 
             if key not in state:
                 rec = _make_present_record(
@@ -317,12 +316,7 @@ def run_watcher(
                     host=managed_host,
                     image=preferred_img or None,
                     price=preferred_price,
-                    availability_message=preferred_availability_msg,
-                    available=preferred_available if preferred_available is not None else None,
-                    in_stock_allocation=(
-                        preferred_allocation if preferred_allocation is not None else None
-                    ),
-                    status=1 if preferred_available is not False else 0,
+                    status=0,
                 )
                 state[key] = rec
                 site_new.setdefault(label, []).append(key)
@@ -334,34 +328,13 @@ def run_watcher(
                     info["name"] = preferred_name
                 if preferred_img and not info.get("image"):
                     info["image"] = preferred_img
-                _apply_change_tracking(
-                    info,
-                    price=preferred_price,
-                    availability_message=preferred_availability_msg,
-                    available=preferred_available,
-                )
-                if preferred_allocation is not None:
-                    info["in_stock_allocation"] = preferred_allocation
+                if preferred_price and not info.get("price"):
+                    info["price"] = preferred_price
                 info.setdefault("host", managed_host)
-                if preferred_available is False:
-                    if info.get("status", 0) != 0:
-                        info["status_since"] = now_iso
-                    info["status"] = 0
-                else:
-                    if info.get("status", 0) == 0:
-                        absent_since = iso_to_dt(info.get("status_since", now_iso))
-                        if now_dt - absent_since >= restock_delta:
-                            site_restocked.setdefault(label, []).append(key)
-                        info["status"] = 1
-                        info["status_since"] = now_iso
-                    else:
-                        info["status"] = 1
 
         # Re-check all known items for this host (not just ones seen in the grid)
         host_keys = [k for k in state if k.split(":", 1)[0] == managed_host]
         for key in host_keys:
-            if key in present_keys:
-                continue
             code = key.split(":", 1)[-1]
             try:
                 detail_item = adapter.fetch_details(session=session, url=url, code=code)
@@ -375,12 +348,6 @@ def run_watcher(
                 continue
             info_detail: Dict[str, Any] = detail_record
 
-            prev_status = int(info_detail.get("status", 0))
-            prev_status_since_raw = info_detail.get("status_since", now_iso)
-            prev_status_since = (
-                iso_to_dt(prev_status_since_raw) if prev_status_since_raw else now_dt
-            )
-
             if detail_item.url:
                 info_detail["url"] = detail_item.url
             if detail_item.title:
@@ -393,20 +360,11 @@ def run_watcher(
                 availability_message=detail_item.availability,
                 available=detail_item.available,
             )
-            if detail_item.in_stock_allocation is not None:
-                info_detail["in_stock_allocation"] = detail_item.in_stock_allocation
-
-            # Update status based on refreshed availability
-            if detail_item.available is False:
-                if prev_status != 0:
-                    info_detail["status_since"] = now_iso
-                info_detail["status"] = 0
-            elif detail_item.available is True:
-                if prev_status == 0:
-                    if now_dt - prev_status_since >= restock_delta:
-                        site_restocked.setdefault(label, []).append(key)
-                    info_detail["status_since"] = now_iso
-                info_detail["status"] = 1
+            restocked = _update_stock_status(info_detail, detail_item.in_stock_allocation, now_iso)
+            if restocked:
+                site_restocked.setdefault(label, []).append(key)
+            elif detail_item.in_stock_allocation is None and detail_item.available is not None:
+                _set_status(info_detail, 1 if detail_item.available else 0, now_iso)
 
         # persist (SQLite only)
         save_items(state, Path(state_db))
@@ -418,14 +376,17 @@ def run_watcher(
             new_codes.extend(keys)
         for _lab, keys in site_restocked.items():
             restocked_codes.extend(keys)
-        total_now = site_current_count
+        total_now = sum(
+            1
+            for k, v in state.items()
+            if k.split(":", 1)[0] == managed_host and int(v.get("status", 0)) == 1
+        )
 
         if new_codes or restocked_codes:
             subject, html_body, text_body = render_change_digest(
                 new_codes=new_codes,
                 restocked_codes=restocked_codes,
                 state=state,
-                restock_hours=restock_hours,
                 target_url=url,
                 total_count=total_now,
             )
