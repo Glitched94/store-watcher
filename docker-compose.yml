@@ -11,6 +11,7 @@ services:
       - ./.env.ui
     environment:
       STATE_DB: /app/data/state.db
+      LOG_STOCK_DEBUG: true
     volumes:
       - data:/app/data
     ports:
@@ -27,6 +28,7 @@ services:
       - ./.env.us
     environment:
       STATE_DB: /app/data/state.db
+      LOG_STOCK_DEBUG: true
     volumes:
       - data:/app/data
     restart: unless-stopped
@@ -41,6 +43,7 @@ services:
       - ./.env.eu
     environment:
       STATE_DB: /app/data/state.db
+      LOG_STOCK_DEBUG: true
     volumes:
       - data:/app/data
     restart: unless-stopped
@@ -55,6 +58,7 @@ services:
       - ./.env.uk
     environment:
       STATE_DB: /app/data/state.db
+      LOG_STOCK_DEBUG: true
     volumes:
       - data:/app/data
     restart: unless-stopped
@@ -69,6 +73,7 @@ services:
       - ./.env.asia
     environment:
       STATE_DB: /app/data/state.db
+      LOG_STOCK_DEBUG: true
     volumes:
       - data:/app/data
     restart: unless-stopped
@@ -83,6 +88,7 @@ services:
       - ./.env.au
     environment:
       STATE_DB: /app/data/state.db
+      LOG_STOCK_DEBUG: true
     volumes:
       - data:/app/data
     restart: unless-stopped
