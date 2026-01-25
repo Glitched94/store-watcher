@@ -15,6 +15,7 @@ router = APIRouter()
 
 def _availability_state(v: Dict[str, Any]) -> Optional[bool]:
     stock_raw = v.get("in_stock_allocation")
+    # Missing/unparseable allocations are treated as 0 (out of stock).
     if stock_raw is None:
         return False
     try:

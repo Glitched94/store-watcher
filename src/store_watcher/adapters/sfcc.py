@@ -253,11 +253,12 @@ class SFCCGridAdapter(Adapter):
                 item.available = bool(details["available"])
             if details.get("availability_message"):
                 item.availability = str(details["availability_message"])
-            if details.get("in_stock_allocation") is not None:
-                try:
-                    item.in_stock_allocation = int(details["in_stock_allocation"])
-                except Exception:
-                    item.in_stock_allocation = None
+            stock_raw = details.get("in_stock_allocation")
+            # SFCC treats missing/unparseable allocation as 0; preserve 0 as a valid value.
+            try:
+                item.in_stock_allocation = int(stock_raw) if stock_raw is not None else 0
+            except Exception:
+                item.in_stock_allocation = 0
             return item
 
         def _set_page(u: str, page_idx: int) -> str:
@@ -374,11 +375,12 @@ class SFCCGridAdapter(Adapter):
             item.availability = str(parsed["availability_message"])
         if parsed.get("image"):
             item.image = tune_image_url(str(parsed["image"]), size=768, quality=100)
-        if parsed.get("in_stock_allocation") is not None:
-            try:
-                item.in_stock_allocation = int(parsed["in_stock_allocation"])
-            except Exception:
-                item.in_stock_allocation = 0
+        stock_raw = parsed.get("in_stock_allocation")
+        # Missing/unparseable values are treated as 0; do not override valid 0 values.
+        try:
+            item.in_stock_allocation = int(stock_raw) if stock_raw is not None else 0
+        except Exception:
+            item.in_stock_allocation = 0
 
         return item
 
@@ -407,8 +409,10 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
             stock_allocation = int(stock_allocation_raw)
         except Exception:
+            # SFCC treats missing/unparseable allocation as 0, which is intentionally preserved.
             stock_allocation = 0
     else:
+        # SFCC treats missing/unparseable allocation as 0, which is intentionally preserved.
         stock_allocation = 0
 
     available = stock_allocation > 0
