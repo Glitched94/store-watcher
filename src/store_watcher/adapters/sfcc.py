@@ -24,6 +24,16 @@ PRODUCT_LINK_RE = re.compile(r"/[^/]+\.html(?:\?|$)", re.I)
 _SFCC_PATH_RX = re.compile(r"^/on/demandware\.store/([^/]+)/([^/]+)/", re.I)
 DEFAULT_REGION_SLUG = "Sites-shopDisney-Site"
 DEFAULT_LOCALE = "default"
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _stock_debug_enabled() -> bool:
+    return (os.getenv("LOG_STOCK_DEBUG") or "").strip().lower() in _TRUE_VALUES
+
+
+def _log_stock_debug(message: str) -> None:
+    if _stock_debug_enabled():
+        print(f"[debug] {message}")
 
 
 def _extract_region_slug_and_locale(u: str) -> Tuple[str, str]:
@@ -409,10 +419,23 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
             stock_allocation = int(stock_allocation_raw)
         except Exception:
+            _log_stock_debug(
+                "SFCC availability parse failed for inStockAllocation={!r} availability={!r}".format(
+                    stock_allocation_raw,
+                    availability_data,
+                )
+            )
             # SFCC treats missing/unparseable allocation as 0, which is intentionally preserved.
             stock_allocation = 0
     else:
         # SFCC treats missing/unparseable allocation as 0, which is intentionally preserved.
+        if stock_allocation_raw is not None:
+            _log_stock_debug(
+                "SFCC availability parse failed for inStockAllocation={!r} availability={!r}".format(
+                    stock_allocation_raw,
+                    availability_data,
+                )
+            )
         stock_allocation = 0
 
     available = stock_allocation > 0

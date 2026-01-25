@@ -24,6 +24,16 @@ ADAPTERS: dict[str, Adapter] = {
 
 
 MULTIPLE_URLS_ERROR = "Only a single URL is supported. Run one watcher per target page."
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _stock_debug_enabled() -> bool:
+    return (os.getenv("LOG_STOCK_DEBUG") or "").strip().lower() in _TRUE_VALUES
+
+
+def _log_stock_debug(message: str) -> None:
+    if _stock_debug_enabled():
+        print(f"[debug] {message}")
 
 
 def _compile(rx: Optional[str]) -> Optional[Pattern[str]]:
@@ -351,6 +361,7 @@ def run_watcher(
             if detail_record is None:
                 continue
             info_detail: Dict[str, Any] = detail_record
+            prev_stock_allocation = info_detail.get("in_stock_allocation")
 
             if detail_item.url:
                 info_detail["url"] = detail_item.url
@@ -370,6 +381,20 @@ def run_watcher(
                 info_detail,
                 detail_item.in_stock_allocation,
                 now_iso,
+            )
+            stock_changed = prev_stock_allocation != info_detail.get("in_stock_allocation")
+            availability_changed = bool(info_detail.get("availability_changed"))
+            persisted = stock_changed or availability_changed
+            _log_stock_debug(
+                "detail code={} in_stock_allocation={} availability_message={} "
+                "stock_changed={} availability_changed={} persisted={}".format(
+                    code,
+                    info_detail.get("in_stock_allocation"),
+                    info_detail.get("availability_message"),
+                    stock_changed,
+                    availability_changed,
+                    persisted,
+                )
             )
             if restocked:
                 site_restocked.setdefault(label, []).append(key)
