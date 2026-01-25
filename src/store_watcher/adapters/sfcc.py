@@ -200,11 +200,21 @@ class SFCCGridAdapter(Adapter):
     ) -> Iterable[Item]:
         seen_codes: Set[str] = set()
         max_pages = 10  # safety cap
-        details_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+        details_cache: Dict[str, Dict[str, Any]] = {}
 
-        def _fetch_variation(code: str) -> Optional[Dict[str, Any]]:
+        def _fetch_variation(code: str) -> Dict[str, Any]:
             if code in details_cache:
-                return details_cache[code]
+                return details_cache[code] or {}
+
+            fallback = {
+                "available": False,
+                "availability_message": None,
+                "image": None,
+                "url": None,
+                "title": None,
+                "price": None,
+                "in_stock_allocation": 0,
+            }
 
             detail_url = _build_variation_url(url, code, quantity=10_000)
             try:
@@ -212,18 +222,24 @@ class SFCCGridAdapter(Adapter):
                 r.raise_for_status()
                 payload = r.json()
             except Exception:
-                details_cache[code] = None
-                return None
+                details_cache[code] = fallback
+                return fallback
 
-            parsed = _parse_variation_payload(payload)
+            try:
+                parsed = _parse_variation_payload(payload)
+            except Exception:
+                parsed = None
+
+            if not parsed:
+                details_cache[code] = fallback
+                return fallback
+
             details_cache[code] = parsed
             return parsed
 
         def _enrich(item: Item) -> Item:
             # Fetch structured availability + images from the Product-Variation endpoint
             details = _fetch_variation(item.code)
-            if not details:
-                return item
 
             if details.get("image"):
                 item.image = tune_image_url(str(details["image"]), size=768, quality=100)
@@ -327,23 +343,23 @@ class SFCCGridAdapter(Adapter):
             page += 1
 
     def fetch_details(self, session: requests.Session, url: str, code: str) -> Optional[Item]:
+        fallback = Item(code=code, url="")
+        fallback.in_stock_allocation = 0
+        fallback.available = False
         detail_url = _build_variation_url(url, code, quantity=10_000)
         try:
             r = session.get(detail_url, timeout=20)
             r.raise_for_status()
             payload = r.json()
         except Exception:
-            item = Item(code=code, url="")
-            item.in_stock_allocation = 0
-            item.available = False
-            return item
+            return fallback
 
-        parsed = _parse_variation_payload(payload)
+        try:
+            parsed = _parse_variation_payload(payload)
+        except Exception:
+            parsed = None
         if not parsed:
-            item = Item(code=code, url="")
-            item.in_stock_allocation = 0
-            item.available = False
-            return item
+            return fallback
 
         item = Item(code=code, url="")
         if parsed.get("url"):
