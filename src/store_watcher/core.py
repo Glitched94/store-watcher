@@ -187,10 +187,8 @@ def _update_stock_status(
             prev_stock_int = int(prev_stock)
         except Exception:
             prev_stock_int = None
-    if prev_stock != stock_val:
-        info["in_stock_allocation"] = stock_val
-    else:
-        info.setdefault("in_stock_allocation", stock_val)
+
+    info["in_stock_allocation"] = stock_val
 
     _set_status(info, 1 if stock_val > 0 else 0, now_iso)
     return prev_stock_int == 0 and stock_val > 0
@@ -366,6 +364,8 @@ def run_watcher(
                 availability_message=detail_item.availability,
                 available=detail_item.available,
             )
+            if detail_item.in_stock_allocation is None:
+                print(f"[warn] Missing in_stock_allocation for {key}")
             restocked = _update_stock_status(
                 info_detail,
                 detail_item.in_stock_allocation,
