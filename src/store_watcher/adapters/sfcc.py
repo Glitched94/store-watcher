@@ -55,6 +55,10 @@ def _build_variation_url(u: str, code: str, *, quantity: int = 1) -> str:
     return urljoin(root, urlunsplit(("", "", path, query, "")))
 
 
+def build_variation_url(u: str, code: str, *, quantity: int = 1) -> str:
+    return _build_variation_url(u, code, quantity=quantity)
+
+
 def build_grid_url(
     host: str,
     region_slug: str,
