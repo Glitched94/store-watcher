@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from ..adapters.sfcc import build_variation_url
 from ..utils import site_label
 from .helpers import _h_since
 
@@ -63,6 +64,7 @@ def _card_grid(
     code = key.split(":", 1)[-1]
     name = v.get("name") or ""
     url = v.get("url") or ""
+    variation_url = build_variation_url(url, code, quantity=10_000) if url and code else ""
     since = status_since or v.get("status_since") or v.get("first_seen")
     h = hours_since_status if hours_since_status is not None else (_h_since(since) or 0.0)
     rel_first = _relative(hours_since_first)
@@ -114,6 +116,13 @@ def _card_grid(
             'border border-slate-800/60"></div>'
         )
 
+    price_html = f'<span class="font-semibold">{v.get("price")}</span>' if v.get("price") else ""
+    variation_link_html = (
+        f'<a class="text-[11px] px-2 py-1 rounded chip hover:bg-slate-900/60 transition" '
+        f'href="{variation_url}" target="_blank" rel="noopener noreferrer">Variation qty</a>'
+        if variation_url
+        else ""
+    )
     return f"""
     <div class="h-full rounded-2xl p-[1px] glow-edge">
       <div class="h-full rounded-2xl bg-slate-900/70 backdrop-blur border border-slate-800/60 p-4 flex flex-col card-hover">
@@ -129,7 +138,8 @@ def _card_grid(
           {name or url}
         </a>
         <div class="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-200">
-          {f'<span class="font-semibold">{v.get("price")}</span>' if v.get("price") else ""}
+          {price_html}
+          {variation_link_html}
         </div>
         <div class="mt-auto pt-3 text-xs text-slate-400 space-y-1">
           <div>First seen {first_seen or "?"} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
@@ -156,6 +166,7 @@ def _row_list(
     code = key.split(":", 1)[-1]
     name = v.get("name") or ""
     url = v.get("url") or ""
+    variation_url = build_variation_url(url, code, quantity=10_000) if url and code else ""
     since = status_since or v.get("status_since") or v.get("first_seen")
     h = hours_since_status if hours_since_status is not None else (_h_since(since) or 0.0)
     rel_first = _relative(hours_since_first)
@@ -196,6 +207,12 @@ def _row_list(
         if v.get("price")
         else ""
     )
+    variation_link_html = (
+        f'<a class="text-[11px] px-2 py-1 rounded chip hover:bg-slate-900/60 transition" '
+        f'href="{variation_url}" target="_blank" rel="noopener noreferrer">Variation qty</a>'
+        if variation_url
+        else ""
+    )
 
     return f"""
     <div class="rounded-2xl p-[1px] glow-edge">
@@ -216,6 +233,7 @@ def _row_list(
           </div>
           <div class="flex flex-col items-end gap-2">
             {price_html}
+            {variation_link_html}
             <span class="text-[11px] px-2 py-0.5 rounded-full border {chip_cls} whitespace-nowrap">{chip_txt}</span>
           </div>
         </div>
