@@ -14,51 +14,14 @@ router = APIRouter()
 
 
 def _availability_state(v: Dict[str, Any]) -> Optional[bool]:
-    availability_message = (v.get("availability_message") or "").strip()
-    available_raw = v.get("available")
-    if isinstance(available_raw, bool):
-        available: Optional[bool] = available_raw
-    elif available_raw is None:
-        available = None
-    else:
-        try:
-            available = bool(int(available_raw))
-        except Exception:
-            available = None
-
-    lowered = availability_message.lower()
-    if "low" in lowered:
-        return True
-
-    in_stock_allocation_raw = v.get("in_stock_allocation")
-    if isinstance(in_stock_allocation_raw, int):
-        in_stock_allocation: Optional[int] = in_stock_allocation_raw
-    elif in_stock_allocation_raw is None:
-        in_stock_allocation = None
-    else:
-        try:
-            in_stock_allocation = int(in_stock_allocation_raw)
-        except Exception:
-            in_stock_allocation = None
-
-    if in_stock_allocation is not None:
-        return in_stock_allocation > 0
-
-    if available is True:
-        return True
-    if available is False:
+    stock_raw = v.get("in_stock_allocation")
+    if stock_raw is None:
         return False
-
-    if "out" in lowered or "unavailable" in lowered or "sold out" in lowered:
-        return False
-    if "in stock" in lowered or "available" in lowered:
-        return True
-
-    status = int(v.get("status", 0))
-    if status == 0:
-        return False
-
-    return None
+    try:
+        stock_val = int(stock_raw)
+    except Exception:
+        stock_val = 0
+    return stock_val > 0
 
 
 def _header_controls_html(user: Optional[dict[str, Any]]) -> str:
