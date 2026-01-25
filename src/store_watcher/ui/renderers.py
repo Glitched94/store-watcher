@@ -9,6 +9,7 @@ from .helpers import _h_since
 
 def _stock_badge(v: Dict[str, Any]) -> tuple[str, str]:
     stock_raw = v.get("in_stock_allocation")
+    # Missing/unparseable allocations are intentionally displayed as Stock 0.
     if stock_raw is None:
         stock_val = 0
     else:
