@@ -6,84 +6,28 @@ from ..utils import site_label
 from .helpers import _h_since
 
 
-def _availability_badge(v: Dict[str, Any]) -> tuple[str, str]:
-    availability_message = (v.get("availability_message") or "").strip()
-    available_raw = v.get("available")
-    available: bool | None
-    if isinstance(available_raw, bool):
-        available = available_raw
-    elif available_raw is None:
-        available = None
+def _stock_badge(v: Dict[str, Any]) -> tuple[str, str]:
+    stock_raw = v.get("in_stock_allocation")
+    if stock_raw is None:
+        stock_val = 0
     else:
         try:
-            available = bool(int(available_raw))
+            stock_val = int(stock_raw)
         except Exception:
-            available = None
-
-    lowered = availability_message.lower()
-    if "low" in lowered:
+            stock_val = 0
+    if stock_val <= 0:
+        return (
+            "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]",
+            "Stock 0",
+        )
+    if stock_val < 100:
         return (
             "bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)]",
-            "Low Stock",
+            f"Stock {stock_val}",
         )
-
-    in_stock_allocation_raw = v.get("in_stock_allocation")
-    in_stock_allocation: int | None
-    if isinstance(in_stock_allocation_raw, int):
-        in_stock_allocation = in_stock_allocation_raw
-    elif in_stock_allocation_raw is None:
-        in_stock_allocation = None
-    else:
-        try:
-            in_stock_allocation = int(in_stock_allocation_raw)
-        except Exception:
-            in_stock_allocation = None
-
-    if in_stock_allocation is not None:
-        if in_stock_allocation > 0:
-            return (
-                "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]",
-                "In Stock",
-            )
-        return (
-            "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]",
-            "Out of Stock",
-        )
-
-    if available is True:
-        return (
-            "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]",
-            "In Stock",
-        )
-
-    if available is False:
-        return (
-            "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]",
-            "Out of Stock",
-        )
-
-    if "out" in lowered or "unavailable" in lowered or "sold out" in lowered:
-        return (
-            "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]",
-            "Out of Stock",
-        )
-
-    if "in stock" in lowered or "available" in lowered:
-        return (
-            "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]",
-            "In Stock",
-        )
-
-    status = int(v.get("status", 0))
-    if status == 0:
-        return (
-            "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]",
-            "Out of Stock",
-        )
-
     return (
-        "bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-[0_0_20px_rgba(244,63,94,0.15)]",
-        "Out of Stock",
+        "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]",
+        f"Stock {stock_val}",
     )
 
 
@@ -119,7 +63,6 @@ def _card_grid(
     code = key.split(":", 1)[-1]
     name = v.get("name") or ""
     url = v.get("url") or ""
-    availability_message = (v.get("availability_message") or "").strip()
     since = status_since or v.get("status_since") or v.get("first_seen")
     h = hours_since_status if hours_since_status is not None else (_h_since(since) or 0.0)
     rel_first = _relative(hours_since_first)
@@ -132,7 +75,7 @@ def _card_grid(
     status_since_text = rel_status or f"~{h:.1f}h"
     if not status_since_text:
         status_since_text = "—"
-    chip_cls, chip_txt = _availability_badge(v)
+    chip_cls, chip_txt = _stock_badge(v)
     pill_items: list[str] = []
     if is_new:
         pill_items.append(
@@ -153,13 +96,6 @@ def _card_grid(
             _pill(
                 "bg-amber-500/15 text-amber-200 border-amber-500/30 shadow-[0_0_18px_rgba(245,158,11,0.12)]",
                 "Price updated",
-            )
-        )
-    if v.get("availability_changed"):
-        pill_items.append(
-            _pill(
-                "bg-violet-500/15 text-violet-200 border-violet-500/30 shadow-[0_0_18px_rgba(139,92,246,0.12)]",
-                "Message updated",
             )
         )
 
@@ -194,8 +130,6 @@ def _card_grid(
         </a>
         <div class="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-200">
           {f'<span class="font-semibold">{v.get("price")}</span>' if v.get("price") else ""}
-          {f'<span class="text-xs text-slate-400">{availability_message}</span>' if availability_message else ""}
-          {f'<span class="text-xs text-slate-400">Stock: {v.get("in_stock_allocation")}</span>' if v.get("in_stock_allocation") is not None and not (availability_message and str(v.get("in_stock_allocation")) in availability_message) else ""}
         </div>
         <div class="mt-auto pt-3 text-xs text-slate-400 space-y-1">
           <div>First seen {first_seen or "?"} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
@@ -222,7 +156,6 @@ def _row_list(
     code = key.split(":", 1)[-1]
     name = v.get("name") or ""
     url = v.get("url") or ""
-    availability_message = (v.get("availability_message") or "").strip()
     since = status_since or v.get("status_since") or v.get("first_seen")
     h = hours_since_status if hours_since_status is not None else (_h_since(since) or 0.0)
     rel_first = _relative(hours_since_first)
@@ -235,7 +168,7 @@ def _row_list(
     status_since_text = rel_status or f"~{h:.1f}h"
     if not status_since_text:
         status_since_text = "—"
-    chip_cls, chip_txt = _availability_badge(v)
+    chip_cls, chip_txt = _stock_badge(v)
     pill_items: list[str] = []
     if is_new:
         pill_items.append(
@@ -258,27 +191,9 @@ def _row_list(
                 "Price updated",
             )
         )
-    if v.get("availability_changed"):
-        pill_items.append(
-            _pill(
-                "bg-violet-500/15 text-violet-200 border-violet-500/30 shadow-[0_0_18px_rgba(139,92,246,0.12)]",
-                "Message updated",
-            )
-        )
     price_html = (
         f'<div class="text-sm font-semibold text-slate-100">{v.get("price")}</div>'
         if v.get("price")
-        else ""
-    )
-    stock_html = (
-        f'<div class="text-xs text-slate-400">Stock: {v.get("in_stock_allocation")}</div>'
-        if v.get("in_stock_allocation") is not None
-        and not (availability_message and str(v.get("in_stock_allocation")) in availability_message)
-        else ""
-    )
-    availability_line = (
-        f'<div class="mt-1 text-xs text-slate-400">{availability_message}</div>'
-        if availability_message
         else ""
     )
 
@@ -294,7 +209,6 @@ def _row_list(
             <a class="mt-1 block text-base font-medium link-neon break-words" href="{url}">
               {name or url}
             </a>
-            {availability_line}
             <div class="mt-1 text-xs text-slate-400 space-y-1">
               <div>First seen {first_seen or "?"} <span class="ml-1 text-slate-500">{first_seen_text}</span></div>
               <div>Status since {since or "?"} <span class="ml-1 text-slate-500">{status_since_text}</span></div>
@@ -302,7 +216,6 @@ def _row_list(
           </div>
           <div class="flex flex-col items-end gap-2">
             {price_html}
-            {stock_html}
             <span class="text-[11px] px-2 py-0.5 rounded-full border {chip_cls} whitespace-nowrap">{chip_txt}</span>
           </div>
         </div>

@@ -329,11 +329,17 @@ class SFCCGridAdapter(Adapter):
             r.raise_for_status()
             payload = r.json()
         except Exception:
-            return None
+            item = Item(code=code, url="")
+            item.in_stock_allocation = 0
+            item.available = False
+            return item
 
         parsed = _parse_variation_payload(payload)
         if not parsed:
-            return None
+            item = Item(code=code, url="")
+            item.in_stock_allocation = 0
+            item.available = False
+            return item
 
         item = Item(code=code, url="")
         if parsed.get("url"):
@@ -352,7 +358,7 @@ class SFCCGridAdapter(Adapter):
             try:
                 item.in_stock_allocation = int(parsed["in_stock_allocation"])
             except Exception:
-                item.in_stock_allocation = None
+                item.in_stock_allocation = 0
 
         return item
 
@@ -374,22 +380,18 @@ def _parse_variation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             message = first.strip() or None
 
     stock_allocation_raw = availability_data.get("inStockAllocation")
-    stock_allocation: Optional[int]
+    stock_allocation: int
     if isinstance(stock_allocation_raw, int):
         stock_allocation = stock_allocation_raw
-    elif isinstance(stock_allocation_raw, str) and stock_allocation_raw.isdigit():
-        stock_allocation = int(stock_allocation_raw)
+    elif isinstance(stock_allocation_raw, str):
+        try:
+            stock_allocation = int(stock_allocation_raw)
+        except Exception:
+            stock_allocation = 0
     else:
-        stock_allocation = None
+        stock_allocation = 0
 
-    available_raw = product.get("available")
-    available: Optional[bool]
-    if stock_allocation is not None:
-        available = stock_allocation > 0
-    elif isinstance(available_raw, bool):
-        available = available_raw
-    else:
-        available = None
+    available = stock_allocation > 0
 
     if message is None and isinstance(availability_data.get("displayLowStockMessage"), bool):
         if availability_data.get("displayLowStockMessage"):

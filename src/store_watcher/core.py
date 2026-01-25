@@ -15,13 +15,7 @@ from .adapters.sfcc import SFCCGridAdapter
 from .db.config import ensure_listener_schema
 from .db.items import load_items_dict, save_items
 from .notify import build_notifiers_from_db, render_change_digest
-from .utils import (
-    domain_of,
-    make_session,
-    pretty_name_from_url,
-    site_label,
-    utcnow_iso,
-)
+from .utils import domain_of, make_session, pretty_name_from_url, site_label, utcnow_iso
 
 ADAPTERS: dict[str, Adapter] = {
     "sfcc": SFCCGridAdapter(),
@@ -157,17 +151,6 @@ def _apply_change_tracking(
     info["availability_changed"] = availability_changed
 
 
-def _coerce_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    try:
-        return int(value)
-    except Exception:
-        return None
-
-
 def _set_status(info: Dict[str, Any], new_status: int, now_iso: str) -> None:
     prev_status = int(info.get("status", 0))
     if new_status != prev_status:
@@ -175,19 +158,42 @@ def _set_status(info: Dict[str, Any], new_status: int, now_iso: str) -> None:
     info["status"] = new_status
 
 
-def _update_stock_status(info: Dict[str, Any], new_stock: object | None, now_iso: str) -> bool:
-    stock_val = _coerce_int(new_stock)
-    if stock_val is None:
-        return False
+def _update_stock_status(
+    info: Dict[str, Any],
+    new_stock: object | None,
+    now_iso: str,
+) -> bool:
+    if new_stock is None:
+        stock_val = 0
+    elif isinstance(new_stock, bool):
+        stock_val = int(new_stock)
+    elif isinstance(new_stock, int):
+        stock_val = new_stock
+    elif isinstance(new_stock, float):
+        stock_val = int(new_stock)
+    elif isinstance(new_stock, str):
+        try:
+            stock_val = int(new_stock)
+        except Exception:
+            stock_val = 0
+    else:
+        stock_val = 0
 
-    prev_stock = _coerce_int(info.get("in_stock_allocation"))
+    prev_stock = info.get("in_stock_allocation")
+    if prev_stock is None:
+        prev_stock_int = None
+    else:
+        try:
+            prev_stock_int = int(prev_stock)
+        except Exception:
+            prev_stock_int = None
     if prev_stock != stock_val:
         info["in_stock_allocation"] = stock_val
     else:
         info.setdefault("in_stock_allocation", stock_val)
 
     _set_status(info, 1 if stock_val > 0 else 0, now_iso)
-    return prev_stock == 0 and stock_val > 0
+    return prev_stock_int == 0 and stock_val > 0
 
 
 def _migrate_keys_to_composite(
@@ -360,7 +366,11 @@ def run_watcher(
                 availability_message=detail_item.availability,
                 available=detail_item.available,
             )
-            restocked = _update_stock_status(info_detail, detail_item.in_stock_allocation, now_iso)
+            restocked = _update_stock_status(
+                info_detail,
+                detail_item.in_stock_allocation,
+                now_iso,
+            )
             if restocked:
                 site_restocked.setdefault(label, []).append(key)
             elif detail_item.in_stock_allocation is None and detail_item.available is not None:
