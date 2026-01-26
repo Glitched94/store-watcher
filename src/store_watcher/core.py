@@ -40,6 +40,10 @@ def _compile(rx: Optional[str]) -> Optional[Pattern[str]]:
     return re.compile(rx) if rx else None
 
 
+def _valid_item_code(code: str) -> bool:
+    return bool(code and re.match(r"^[A-Za-z0-9_-]+$", code))
+
+
 def normalize_single_url(raw: str | None) -> str:
     """
     Trim the input and ensure only one URL is provided.
@@ -215,12 +219,14 @@ def _migrate_keys_to_composite(
     for k, v in state.items():
         if ":" in k:
             host, _code = k.split(":", 1)
-            v.setdefault("host", host)
-            upgraded[k] = v
+            if not host:
+                host = default_host
+            v["host"] = host
+            upgraded[f"{host}:{_code}"] = v
         else:
             # legacy numeric key – use default_host as prefix
             new_key = f"{default_host}:{k}"
-            v.setdefault("host", default_host)
+            v["host"] = default_host
             upgraded[new_key] = v
     return upgraded
 
@@ -350,15 +356,28 @@ def run_watcher(
         host_keys = [k for k in state if k.split(":", 1)[0] == managed_host]
         for key in host_keys:
             code = key.split(":", 1)[-1]
+            if not _valid_item_code(code):
+                _log_stock_debug(f"skip detail fetch for invalid code={code!r} key={key}")
+                continue
+            detail_record = state.get(key)
+            if detail_record is None:
+                continue
+            url_host = domain_of(detail_record.get("url", ""))
+            if url_host and url_host != managed_host:
+                _log_stock_debug(
+                    "skip detail fetch for key={} url_host={} managed_host={}".format(
+                        key, url_host, managed_host
+                    )
+                )
+                continue
+            _log_stock_debug(
+                "fetching detail for managed_host={} key={} code={}".format(managed_host, key, code)
+            )
             try:
                 detail_item = adapter.fetch_details(session=session, url=url, code=code)
             except Exception:
                 detail_item = None
             if not detail_item:
-                continue
-
-            detail_record = state.get(key)
-            if detail_record is None:
                 continue
             info_detail: Dict[str, Any] = detail_record
             prev_stock_allocation = info_detail.get("in_stock_allocation")
