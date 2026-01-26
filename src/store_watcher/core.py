@@ -416,6 +416,7 @@ def run_watcher(
             for k, v in state.items()
             if k.split(":", 1)[0] == managed_host and int(v.get("status", 0)) == 1
         )
+        known_host = sum(1 for k in state if k.split(":", 1)[0] == managed_host)
 
         if new_codes or restocked_codes:
             subject, html_body, text_body = render_change_digest(
@@ -432,8 +433,8 @@ def run_watcher(
                     traceback.print_exc()
 
         print(
-            "[info] tick: total={} new={} restocked={} known={}".format(
-                total_now, len(new_codes), len(restocked_codes), len(state)
+            "[info] tick: total={} new={} restocked={} known_host={}".format(
+                total_now, len(new_codes), len(restocked_codes), known_host
             )
         )
 
